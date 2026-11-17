@@ -1,8 +1,0 @@
-{
-  "appId": "com.pawpaw.grooming",
-  "appName": "포포그루밍",
-  "webDir": "dist",
-  "server": {
-    "androidScheme": "https"
-  }
-}

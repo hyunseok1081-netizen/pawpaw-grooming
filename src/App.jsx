@@ -30,10 +30,22 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('user'); // 'user' | 'owner'
-  const [extraInfo, setExtraInfo] = useState(''); // 보호자: 반려견 정보 / 사장님: 미용실 이름
+  const [extraInfo, setExtraInfo] = useState('');
 
   // 실시간 예약 목록 상태
   const [bookings, setBookings] = useState([]);
+
+  // 검색 및 필터 상태 (이용자용)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedRegion, setSelectedRegion] = useState('전체');
+
+  // 가상의 제휴 미용실 풀 (추후 사장님 등록 기능과 연동 가능)
+  const [shops] = useState([
+    { id: 1, name: '포포 멍뭉이 미용실', region: '인천', distance: '1.2km', desc: '스파/가위컷 전문', tag: '스파' },
+    { id: 2, name: '예쁜 댕댕이 샵', region: '서울', distance: '2.5km', desc: '오픈형 통유리 미용실', tag: '오픈형' },
+    { id: 3, name: '힐링 반려동물 케어', region: '인천', distance: '3.0km', desc: '노령견/특수견 케어 전문', tag: '노령견' },
+    { id: 4, name: '강남 프리미엄 펫살롱', region: '서울', distance: '4.1km', desc: '1:1 맞춤형 프리미엄 스타일링', tag: '프리미엄' },
+  ]);
 
   // 1. 로그인 상태 감지 및 프로필 로드
   useEffect(() => {
@@ -95,7 +107,7 @@ export default function App() {
     await signOut(auth);
   };
 
-  // 5. 새로운 예약 신청 (보호자용 -> DB 저장)
+  // 5. 새로운 예약 신청 (보호자용)
   const handleNewBooking = async (shopName) => {
     try {
       await addDoc(collection(db, 'bookings'), {
@@ -113,7 +125,7 @@ export default function App() {
     }
   };
 
-  // 6. 예약 상태 변경 (사장님용 -> DB 업데이트)
+  // 6. 예약 상태 변경 (사장님용)
   const updateStatus = async (id, newStatus) => {
     try {
       await updateDoc(doc(db, 'bookings', id), { status: newStatus });
@@ -130,7 +142,7 @@ export default function App() {
     );
   }
 
-  // [화면 A] 비로그인 상태: 회원가입 / 로그인 화면
+  // [화면 A] 로그인/회원가입
   if (!user || !userProfile) {
     return (
       <div className="min-h-screen bg-orange-50 flex flex-col justify-center items-center p-6">
@@ -234,9 +246,16 @@ export default function App() {
     );
   }
 
-  // [화면 B] 이용자(보호자) 홈 화면
+  // [화면 B] 이용자(보호자) 홈 화면 (지역 검색 및 필터 강화)
   if (userProfile.role === 'user') {
     const myBookings = bookings.filter((b) => b.customerId === user.uid);
+
+    // 검색어 및 지역 필터링 로직
+    const filteredShops = shops.filter((shop) => {
+      const matchesRegion = selectedRegion === '전체' || shop.region === selectedRegion;
+      const matchesSearch = shop.name.toLowerCase().includes(searchTerm.toLowerCase()) || shop.desc.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesRegion && matchesSearch;
+    });
 
     return (
       <div className="min-h-screen bg-gray-50 pb-10">
@@ -258,36 +277,74 @@ export default function App() {
         <main className="max-w-md mx-auto p-4 space-y-6">
           <div className="bg-orange-500 text-white rounded-2xl p-5 shadow-sm">
             <h2 className="text-lg font-bold">우리 아이 미용 예약하기</h2>
-            <p className="text-xs opacity-90 mt-1">원하는 미용실을 선택해 바로 예약 신청하세요!</p>
+            <p className="text-xs opacity-90 mt-1">지역별 전문 미용실을 검색하고 간편하게 예약하세요!</p>
           </div>
 
-          <div>
-            <h3 className="font-bold text-gray-800 mb-3 text-sm">🔍 제휴 애견 미용실</h3>
-            <div className="space-y-3">
-              {[
-                { name: '포포 멍뭉이 미용실', distance: '1.2km', desc: '스파/가위컷 전문' },
-                { name: '예쁜 댕댕이 샵', distance: '2.5km', desc: '오픈형 통유리 미용실' },
-                { name: '힐링 반려동물 케어', distance: '3.0km', desc: '노령견/특수견 케어 전문' },
-              ].map((shop, idx) => (
-                <div
-                  key={idx}
-                  className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center"
+          {/* 검색 및 필터 영역 */}
+          <div className="space-y-3">
+            <input
+              type="text"
+              placeholder="미용실 이름 또는 특징 검색 (예: 스파, 가위컷)"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm shadow-sm focus:outline-none focus:border-orange-500"
+            />
+
+            {/* 지역 선택 탭 */}
+            <div className="flex space-x-2">
+              {['전체', '서울', '인천'].map((region) => (
+                <button
+                  key={region}
+                  onClick={() => setSelectedRegion(region)}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition shadow-sm ${
+                    selectedRegion === region
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-white text-gray-600 border border-gray-200'
+                  }`}
                 >
-                  <div>
-                    <h4 className="font-bold text-gray-800 text-sm">{shop.name}</h4>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {shop.desc} · {shop.distance}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleNewBooking(shop.name)}
-                    className="bg-orange-500 text-white text-xs px-3 py-2 rounded-lg font-medium shadow-sm hover:bg-orange-600"
-                  >
-                    예약하기
-                  </button>
-                </div>
+                  {region} 지역
+                </button>
               ))}
             </div>
+          </div>
+
+          {/* 숍 리스트 */}
+          <div>
+            <h3 className="font-bold text-gray-800 mb-3 text-sm">
+              🔍 검색된 미용실 ({filteredShops.length}개)
+            </h3>
+            {filteredShops.length === 0 ? (
+              <p className="text-xs text-gray-400 bg-white p-6 rounded-xl text-center shadow-sm">
+                조건에 일치하는 미용실이 없습니다.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {filteredShops.map((shop) => (
+                  <div
+                    key={shop.id}
+                    className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center"
+                  >
+                    <div>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xs bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded font-bold">
+                          {shop.region}
+                        </span>
+                        <h4 className="font-bold text-gray-800 text-sm">{shop.name}</h4>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {shop.desc} · {shop.distance}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleNewBooking(shop.name)}
+                      className="bg-orange-500 text-white text-xs px-3 py-2 rounded-lg font-medium shadow-sm hover:bg-orange-600 transition"
+                    >
+                      예약하기
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 내 예약 현황 */}
@@ -329,7 +386,7 @@ export default function App() {
     );
   }
 
-  // [화면 C] 사장님(그로머) 대시보드 화면
+  // [화면 C] 사장님 대시보드 화면
   return (
     <div className="min-h-screen bg-slate-100 pb-10">
       <header className="bg-slate-900 text-white p-4 flex justify-between items-center sticky top-0 z-10">

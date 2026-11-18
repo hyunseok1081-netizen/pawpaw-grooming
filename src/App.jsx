@@ -280,7 +280,7 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('');
   const [selectedMapShop, setSelectedMapShop] = useState(null);
 
-  // 보호자 상세 예약 모달 상태 (업체별 날짜·시간·미용방식 선택)
+  // 보호자 상세 예약 모달 상태
   const [bookingModalShop, setBookingModalShop] = useState(null);
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
@@ -294,8 +294,10 @@ export default function App() {
   const [petWeight, setPetWeight] = useState('');
   const [petNote, setPetNote] = useState('');
 
-  // 사장님 화면 탭 & 매장 등록/커스텀 상태
+  // 사장님 화면 탭 & 매장/사장님 정보 수정 상태
   const [ownerTab, setOwnerTab] = useState('bookings');
+  const [ownerNameInput, setOwnerNameInput] = useState('');
+  const [shopNameInput, setShopNameInput] = useState('');
   const [shopRegion, setShopRegion] = useState('서울');
   const [shopDistrict, setShopDistrict] = useState('');
   const [shopDesc, setShopDesc] = useState('');
@@ -347,8 +349,33 @@ export default function App() {
           setPetBreed(data.petDetail?.petBreed || '');
           setPetWeight(data.petDetail?.petWeight || '');
           setPetNote(data.petDetail?.petNote || '');
+
           if (data.role === 'user') {
             detectMyLocation(false);
+          } else if (data.role === 'owner') {
+            setOwnerNameInput(data.name || '');
+            setShopNameInput(data.extraInfo || '');
+            // 기존에 등록된 사장님 매장 정보가 있으면 자동 로드
+            const shopSnap = await getDoc(doc(db, 'shops', currentUser.uid));
+            if (shopSnap.exists()) {
+              const sData = shopSnap.data();
+              setShopNameInput(sData.name || data.extraInfo || '');
+              setShopRegion(sData.region || '서울');
+              setShopDistrict(sData.district || '');
+              setShopDesc(sData.desc || '');
+              setShopPrice(sData.price || '50,000원~');
+              if (sData.timeSlots && sData.timeSlots.length > 0) {
+                setShopTimeSlotsInput(sData.timeSlots.join(', '));
+              }
+              if (sData.services && sData.services.length >= 3) {
+                setShopSvc1Name(sData.services[0].name || '');
+                setShopSvc1Price(sData.services[0].price || '');
+                setShopSvc2Name(sData.services[1].name || '');
+                setShopSvc2Price(sData.services[1].price || '');
+                setShopSvc3Name(sData.services[2].name || '');
+                setShopSvc3Price(sData.services[2].price || '');
+              }
+            }
           }
         }
       } else {
@@ -398,6 +425,9 @@ export default function App() {
         if (role === 'user') {
           setPetName(extraInfo);
           detectMyLocation(false);
+        } else {
+          setOwnerNameInput(name || '사장님');
+          setShopNameInput(extraInfo || '포포 제휴 미용실');
         }
         alert('회원가입이 완료되었습니다!');
       } else {
@@ -412,7 +442,6 @@ export default function App() {
     await signOut(auth);
   };
 
-  // 매장별 예약 모달 열기 헬퍼
   const openShopBookingModal = (shop) => {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
     const slots = shop.timeSlots && shop.timeSlots.length > 0 ? shop.timeSlots : ['10:00', '13:00', '15:00', '17:00'];
@@ -424,7 +453,6 @@ export default function App() {
     setBookingNote('');
   };
 
-  // 보호자: 업체별 날짜·시간·미용방식 지정 예약 확정
   const handleConfirmBooking = async (e) => {
     e.preventDefault();
     if (!bookingDate) {
@@ -498,9 +526,18 @@ export default function App() {
     }
   };
 
-  // 사장님: 매장 등록 (운영시간 슬롯 + 매장별 미용 메뉴 3종 함께 저장)
+  // 사장님: 매장명 + 사장님 정보 + 매장 설정 일괄 등록/수정
   const handleRegisterShop = async (e) => {
     e.preventDefault();
+    const trimmedShopName = shopNameInput.trim();
+    const trimmedOwnerName = ownerNameInput.trim() || userProfile.name || '사장님';
+
+    if (!trimmedShopName) {
+      alert('매장명을 입력해 주세요.');
+      return;
+    }
+
+    const oldShopName = userProfile.extraInfo;
     const baseCoord = REGION_CENTERS[shopRegion] || REGION_CENTERS['서울'];
     const randomOffsetLat = (Math.random() - 0.5) * 0.02;
     const randomOffsetLng = (Math.random() - 0.5) * 0.02;
@@ -517,23 +554,50 @@ export default function App() {
     ];
 
     try {
+      // 1. 사장님 사용자 프로필(users)에 변경된 매장명 및 성함 반영
+      await updateDoc(doc(db, 'users', user.uid), {
+        name: trimmedOwnerName,
+        extraInfo: trimmedShopName,
+      });
+      setUserProfile({
+        ...userProfile,
+        name: trimmedOwnerName,
+        extraInfo: trimmedShopName,
+      });
+
+      // 2. 보호자 지도에 노출되는 매장 정보(shops) 등록/수정
+      const existingShop = dbShops.find((s) => s.id === user.uid);
       await setDoc(doc(db, 'shops', user.uid), {
         ownerId: user.uid,
-        name: userProfile.extraInfo,
+        name: trimmedShopName,
         region: shopRegion,
         district: shopDistrict || '중심가',
         desc: shopDesc || '정성껏 케어하는 반려견 전문 미용실',
         price: shopSvc2Price || shopPrice || '45,000원~',
-        lat: baseCoord.lat + randomOffsetLat,
-        lng: baseCoord.lng + randomOffsetLng,
+        lat: existingShop?.lat || baseCoord.lat + randomOffsetLat,
+        lng: existingShop?.lng || baseCoord.lng + randomOffsetLng,
         timeSlots: parsedSlots.length > 0 ? parsedSlots : ['10:00', '13:00', '15:00', '17:00'],
         services: customServices,
-        createdAt: serverTimestamp(),
+        createdAt: existingShop?.createdAt || serverTimestamp(),
       });
-      alert('매장 정보와 예약 시간대/미용 메뉴가 등록되었습니다!');
+
+      // 3. 매장명이 변경된 경우 기존 예약 내역의 매장명도 자동 동기화
+      if (oldShopName && oldShopName !== trimmedShopName) {
+        const myShopBookings = bookings.filter((b) => b.shopId === user.uid || b.shop === oldShopName);
+        await Promise.all(
+          myShopBookings.map((b) =>
+            updateDoc(doc(db, 'bookings', b.id), {
+              shop: trimmedShopName,
+              shopId: user.uid,
+            })
+          )
+        );
+      }
+
+      alert(`"${trimmedShopName}" 매장 및 사장님 정보가 성공적으로 저장되었습니다!`);
       setOwnerTab('bookings');
     } catch (err) {
-      alert('매장 등록 실패: ' + err.message);
+      alert('정보 저장 실패: ' + err.message);
     }
   };
 
@@ -696,7 +760,6 @@ export default function App() {
         return 0;
       });
 
-    // 모달에 띄울 선택 매장의 시간대 & 이미 예약된 시간 계산
     const modalTimeSlots =
       bookingModalShop?.timeSlots && bookingModalShop.timeSlots.length > 0
         ? bookingModalShop.timeSlots
@@ -1070,7 +1133,6 @@ export default function App() {
               </div>
 
               <form onSubmit={handleConfirmBooking} className="space-y-4">
-                {/* 1. 희망 날짜 선택 */}
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
                     1️⃣ 예약 날짜 선택
@@ -1088,7 +1150,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* 2. 해당 매장의 예약 가능 시간대 버튼 선택 */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="block text-xs font-extrabold text-gray-700">
@@ -1123,7 +1184,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 3. 제휴 업체별 제공 미용 코스 선택 */}
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
                     3️⃣ 미용 메뉴 선택 ({bookingModalShop.name} 전용)
@@ -1152,7 +1212,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4. 세부 미용 방식(컷 스타일) 선택 */}
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
                     4️⃣ 원하는 미용 방식 / 컷 스타일
@@ -1180,7 +1239,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 5. 추가 요청사항 */}
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1">
                     5️⃣ 사장님께 전달할 요청사항
@@ -1219,7 +1277,7 @@ export default function App() {
 
   // [화면 C] 사장님(그로머) 대시보드 화면
   const displayedBookings = onlyMyShopBookings
-    ? bookings.filter((b) => b.shop === userProfile.extraInfo)
+    ? bookings.filter((b) => b.shopId === user.uid || b.shop === userProfile.extraInfo)
     : bookings;
 
   return (
@@ -1228,7 +1286,9 @@ export default function App() {
         <div className="flex items-center space-x-2">
           <div className="bg-slate-800 text-slate-200 p-1.5 rounded-xl text-base shadow-sm">✂️</div>
           <div>
-            <p className="text-[11px] text-slate-400 font-bold leading-none">애견 미용사 사장님</p>
+            <p className="text-[11px] text-slate-400 font-bold leading-none">
+              {userProfile.name} 사장님
+            </p>
             <h2 className="font-extrabold text-white text-sm mt-0.5">{userProfile.extraInfo}</h2>
           </div>
         </div>
@@ -1245,7 +1305,9 @@ export default function App() {
           <button
             onClick={() => setOwnerTab('bookings')}
             className={`py-3.5 border-b-2 transition ${
-              ownerTab === 'bookings' ? 'border-orange-500 text-orange-400 bg-slate-900/50' : 'border-transparent text-slate-400 hover:text-slate-200'
+              ownerTab === 'bookings'
+                ? 'border-orange-500 text-orange-400 bg-slate-900/50'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             📅 예약 관리
@@ -1253,10 +1315,12 @@ export default function App() {
           <button
             onClick={() => setOwnerTab('shop')}
             className={`py-3.5 border-b-2 transition ${
-              ownerTab === 'shop' ? 'border-orange-500 text-orange-400 bg-slate-900/50' : 'border-transparent text-slate-400 hover:text-slate-200'
+              ownerTab === 'shop'
+                ? 'border-orange-500 text-orange-400 bg-slate-900/50'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            🏪 매장·메뉴 설정
+            🏪 매장명·정보 변경
           </button>
         </div>
       </div>
@@ -1355,18 +1419,35 @@ export default function App() {
         ) : (
           <form onSubmit={handleRegisterShop} className="bg-slate-800 p-6 rounded-3xl border border-slate-700/60 space-y-4 shadow-sm">
             <div>
-              <h3 className="font-black text-white text-base">🏪 매장 정보 & 예약 시간·메뉴 설정</h3>
-              <p className="text-xs text-slate-400 mt-0.5">설정한 시간대와 미용 메뉴가 보호자 예약 화면에 그대로 표시됩니다.</p>
+              <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                매장명, 사장님 성함, 지역, 예약 시간대 및 메뉴를 언제든 변경할 수 있습니다.
+              </p>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">매장명</label>
-              <input
-                type="text"
-                value={userProfile.extraInfo}
-                disabled
-                className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-slate-400 cursor-not-allowed"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-orange-400 mb-1">매장명 (상호 변경 가능)</label>
+                <input
+                  type="text"
+                  placeholder="예: 포포 멍뭉이 미용실"
+                  value={shopNameInput}
+                  onChange={(e) => setShopNameInput(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-orange-500/50 rounded-2xl px-3.5 py-3 text-sm text-white font-bold focus:border-orange-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">사장님 성함</label>
+                <input
+                  type="text"
+                  placeholder="예: 홍길동"
+                  value={ownerNameInput}
+                  onChange={(e) => setOwnerNameInput(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:border-orange-500 focus:outline-none"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -1475,7 +1556,7 @@ export default function App() {
               type="submit"
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
             >
-              매장 및 예약 설정 저장하기
+              매장명 및 정보 변경 저장하기
             </button>
           </form>
         )}

@@ -22,86 +22,91 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-// 기본 제휴 미용실 (매장별 고유 예약 시간대 & 특화 미용 메뉴 포함)
+// 기본 제휴 미용실 (1시간 30분 단위 타임슬롯 적용)
 const DEFAULT_SHOPS = [
   {
     id: 'default-1',
     name: '포포 멍뭉이 미용실',
+    petType: 'dog',
     region: '인천',
     district: '남동구 구월동',
-    desc: '스파/가위컷 전문 · 100% 예약제',
+    desc: '강아지 스파/가위컷 전문 · 100% 예약제',
     price: '45,000원~',
     lat: 37.4482,
     lng: 126.7015,
-    timeSlots: ['10:00', '12:00', '14:00', '16:00', '18:00'],
+    timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
     services: [
-      { name: '전체 가위컷 풀케어', price: '65,000원', duration: '2시간' },
+      { name: '전체 가위컷 풀케어', price: '65,000원', duration: '1시간 30분' },
       { name: '클리핑(기계컷) + 얼굴컷', price: '45,000원', duration: '1시간 30분' },
-      { name: '탄산 버블 스파 + 부분미용', price: '40,000원', duration: '1시간' },
+      { name: '탄산 버블 스파 + 부분미용', price: '40,000원', duration: '1시간 30분' },
     ],
   },
   {
     id: 'default-2',
-    name: '예쁜 댕댕이 샵',
+    name: '나비야 무마취 고양이 미용실',
+    petType: 'cat',
     region: '서울',
     district: '마포구 연남동',
-    desc: '오픈형 통유리 미용실 · 대형견 가능',
-    price: '50,000원~',
+    desc: '고양이 전문 무마취 미용 · 강아지 출입 분리',
+    price: '60,000원~',
     lat: 37.5612,
     lng: 126.9248,
-    timeSlots: ['11:00', '13:30', '15:30', '17:30', '19:30'],
+    timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
     services: [
-      { name: '곰돌이컷 / 브로콜리컷 특화', price: '70,000원', duration: '2시간' },
-      { name: '중·대형견 목욕 + 죽은털 제거', price: '60,000원', duration: '1시간 30분' },
-      { name: '위생미용 + 발바닥/눈가 케어', price: '25,000원', duration: '40분' },
+      { name: '고양이 무마취 전체 미용 (사자컷/올빡)', price: '75,000원', duration: '1시간 30분' },
+      { name: '장모종 엉킴 제거 + 저자극 목욕', price: '65,000원', duration: '1시간 30분' },
+      { name: '고양이 위생·발톱·귀 집중 케어', price: '30,000원', duration: '1시간 30분' },
     ],
   },
   {
     id: 'default-3',
-    name: '힐링 반려동물 케어',
+    name: '힐링 멍냥 반려동물 케어',
+    petType: 'both',
     region: '인천',
     district: '연수구 송도동',
-    desc: '노령견/특수견 저자극 케어 전문',
+    desc: '강아지·고양이 분리 묘실 운영 · 노령 반려동물 전문',
     price: '55,000원~',
     lat: 37.3827,
     lng: 126.6563,
-    timeSlots: ['10:30', '13:00', '15:00', '17:00'],
+    timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
     services: [
-      { name: '노령견 맞춤 1:1 저자극 미용', price: '65,000원', duration: '2시간' },
-      { name: '약용 입욕 + 피부 진정 스파', price: '55,000원', duration: '1시간' },
-      { name: '엉킴 풀기 + 전체 클리핑', price: '55,000원', duration: '1시간 30분' },
+      { name: '[강아지] 노령견 맞춤 1:1 저자극 미용', price: '65,000원', duration: '1시간 30분' },
+      { name: '[고양이] 스트레스 프리 무마취 미용', price: '70,000원', duration: '1시간 30분' },
+      { name: '[공통] 약용 입욕 + 피부 진정 스파', price: '55,000원', duration: '1시간 30분' },
     ],
   },
   {
     id: 'default-4',
     name: '강남 프리미엄 펫살롱',
+    petType: 'both',
     region: '서울',
     district: '강남구 신사동',
-    desc: '1:1 맞춤형 프리미엄 스타일링',
+    desc: '강아지 스포팅 & 고양이 전담 핸들러 상주',
     price: '65,000원~',
     lat: 37.5236,
     lng: 127.0232,
-    timeSlots: ['11:00', '14:00', '16:30', '19:00'],
+    timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30', '19:00'],
     services: [
-      { name: '시그니처 스포팅 + 머즐 스타일링', price: '85,000원', duration: '2시간 30분' },
-      { name: '머드팩 + 아로마 테라피 목욕', price: '65,000원', duration: '1시간 20분' },
-      { name: '퍼피 첫 배냇미용 적응 패키지', price: '55,000원', duration: '1시간 30분' },
+      { name: '[강아지] 시그니처 스포팅 + 머즐 스타일링', price: '85,000원', duration: '1시간 30분' },
+      { name: '[고양이] 2인 1조 안전 무마취 미용 + 목욕', price: '80,000원', duration: '1시간 30분' },
+      { name: '[공통] 아로마 테라피 스파 패키지', price: '60,000원', duration: '1시간 30분' },
     ],
   },
   {
     id: 'default-5',
-    name: '분당 코지 그루밍',
+    name: '분당 냥이네 그루밍 스튜디오',
+    petType: 'cat',
     region: '경기',
     district: '성남시 분당구',
-    desc: '스트레스 프리 탄산스파 전문',
-    price: '50,000원~',
+    desc: '100% 고양이 전용 예약제 · 호르몬 디퓨저 케어',
+    price: '60,000원~',
     lat: 37.3826,
     lng: 127.1189,
-    timeSlots: ['10:00', '11:30', '14:00', '16:00', '18:00'],
+    timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
     services: [
-      { name: '전체 클리핑 + 탄산스파 패키지', price: '55,000원', duration: '1시간 40분' },
-      { name: '가위컷 디자인 + 귀/발 케어', price: '75,000원', duration: '2시간 10분' },
-      { name: '목욕 + 부분 위생미용', price: '35,000원', duration: '1시간' },
+      { name: '고양이 전체 클리핑 + 목욕 풀코스', price: '75,000원', duration: '1시간 30분' },
+      { name: '단모/장모 털빠짐 방지 딥클렌징 목욕', price: '60,000원', duration: '1시간 30분' },
+      { name: '고양이 부분 미용 + 발톱/귀 케어', price: '35,000원', duration: '1시간 30분' },
     ],
   },
 ];
@@ -127,6 +132,16 @@ function calcDistanceKm(lat1, lon1, lat2, lon2) {
   return (R * c).toFixed(1);
 }
 
+function getPetTypeBadge(petType) {
+  if (petType === 'cat') {
+    return { label: '🐱 고양이 전문', bg: 'bg-purple-100 text-purple-700', icon: '🐱', color: '#9333ea' };
+  }
+  if (petType === 'both') {
+    return { label: '🐶🐱 멍냥 모두', bg: 'bg-emerald-100 text-emerald-700', icon: '🐾', color: '#ea580c' };
+  }
+  return { label: '🐶 강아지 전문', bg: 'bg-amber-100 text-amber-800', icon: '🐶', color: '#f97316' };
+}
+
 // 인터랙티브 지도 컴포넌트
 function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop }) {
   const mapContainerRef = useRef(null);
@@ -146,14 +161,18 @@ function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop
       zoomControl: false,
     });
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19,
-}).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
 
     L.control.zoom({ position: 'topright' }).addTo(map);
     markersLayerRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
+
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 200);
 
     return () => {
       map.remove();
@@ -195,11 +214,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     shops.forEach((shop) => {
       if (!shop.lat || !shop.lng) return;
       const isSelected = selectedShop?.id === shop.id;
+      const badge = getPetTypeBadge(shop.petType);
 
       const shopIcon = L.divIcon({
         className: 'custom-shop-marker',
         html: `<div style="
-          background:${isSelected ? '#0f172a' : '#f97316'};
+          background:${isSelected ? '#0f172a' : badge.color};
           color:#ffffff;
           padding:5px 10px;
           border-radius:9999px;
@@ -213,7 +233,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
           gap:3px;
           transform:translate(-50%, -100%);
         ">
-          <span>🐾</span><span>${shop.name}</span>
+          <span>${badge.icon}</span><span>${shop.name}</span>
         </div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
@@ -240,14 +260,18 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         <span>내 위치</span>
       </button>
 
-      <div className="absolute top-3 left-3 z-[400] bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-3 text-[11px] font-bold text-gray-700">
+      <div className="absolute top-3 left-3 z-[400] bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-2.5 text-[10px] font-bold text-gray-700">
         <span className="flex items-center space-x-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+          <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
           <span>내 위치</span>
         </span>
         <span className="flex items-center space-x-1">
-          <span className="w-2.5 h-2.5 rounded-full bg-orange-500 inline-block"></span>
-          <span>제휴 샵 ({shops.length})</span>
+          <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
+          <span>강아지/공통</span>
+        </span>
+        <span className="flex items-center space-x-1">
+          <span className="w-2 h-2 rounded-full bg-purple-600 inline-block"></span>
+          <span>고양이전문</span>
         </span>
       </div>
     </div>
@@ -265,6 +289,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState('user');
+  const [signUpPetSpecies, setSignUpPetSpecies] = useState('dog');
   const [extraInfo, setExtraInfo] = useState('');
 
   // 실시간 DB 데이터
@@ -276,37 +301,41 @@ export default function App() {
   const [viewMode, setViewMode] = useState('map');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('전체');
+  const [selectedSpeciesFilter, setSelectedSpeciesFilter] = useState('all');
   const [myLocation, setMyLocation] = useState(null);
   const [locationStatus, setLocationStatus] = useState('');
   const [selectedMapShop, setSelectedMapShop] = useState(null);
 
   // 보호자 상세 예약 모달 상태
   const [bookingModalShop, setBookingModalShop] = useState(null);
+  const [bookingPetSpecies, setBookingPetSpecies] = useState('dog');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [selectedServiceIdx, setSelectedServiceIdx] = useState(0);
   const [customStyleDetail, setCustomStyleDetail] = useState('얼굴 동그랗게 (곰돌이컷)');
   const [bookingNote, setBookingNote] = useState('');
 
-  // 보호자 반려견 상세 정보 상태
+  // 보호자 반려동물 상세 정보 상태
+  const [petSpecies, setPetSpecies] = useState('dog');
   const [petName, setPetName] = useState('');
   const [petBreed, setPetBreed] = useState('');
   const [petWeight, setPetWeight] = useState('');
   const [petNote, setPetNote] = useState('');
 
-  // 사장님 화면 탭 & 매장/사장님 정보 수정 상태
+  // 사장님 화면 탭 & 매장/사장님 정보 수정 상태 (1시간 30분 단위 기본 슬롯 제공)
   const [ownerTab, setOwnerTab] = useState('bookings');
   const [ownerNameInput, setOwnerNameInput] = useState('');
   const [shopNameInput, setShopNameInput] = useState('');
+  const [shopPetType, setShopPetType] = useState('both');
   const [shopRegion, setShopRegion] = useState('서울');
   const [shopDistrict, setShopDistrict] = useState('');
   const [shopDesc, setShopDesc] = useState('');
   const [shopPrice, setShopPrice] = useState('50,000원~');
-  const [shopTimeSlotsInput, setShopTimeSlotsInput] = useState('10:00, 12:00, 14:00, 16:00, 18:00');
+  const [shopTimeSlotsInput, setShopTimeSlotsInput] = useState('10:00, 11:30, 13:00, 14:30, 16:00, 17:30');
   const [shopSvc1Name, setShopSvc1Name] = useState('전체 가위컷 풀케어');
   const [shopSvc1Price, setShopSvc1Price] = useState('65,000원');
-  const [shopSvc2Name, setShopSvc2Name] = useState('클리핑(기계컷) + 목욕');
-  const [shopSvc2Price, setShopSvc2Price] = useState('45,000원');
+  const [shopSvc2Name, setShopSvc2Name] = useState('고양이 무마취 전체 미용');
+  const [shopSvc2Price, setShopSvc2Price] = useState('70,000원');
   const [shopSvc3Name, setShopSvc3Name] = useState('탄산 스파 + 부분 위생미용');
   const [shopSvc3Price, setShopSvc3Price] = useState('35,000원');
   const [onlyMyShopBookings, setOnlyMyShopBookings] = useState(false);
@@ -345,6 +374,8 @@ export default function App() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserProfile(data);
+          const loadedSpecies = data.petDetail?.petSpecies || 'dog';
+          setPetSpecies(loadedSpecies);
           setPetName(data.petDetail?.petName || data.extraInfo || '');
           setPetBreed(data.petDetail?.petBreed || '');
           setPetWeight(data.petDetail?.petWeight || '');
@@ -355,11 +386,11 @@ export default function App() {
           } else if (data.role === 'owner') {
             setOwnerNameInput(data.name || '');
             setShopNameInput(data.extraInfo || '');
-            // 기존에 등록된 사장님 매장 정보가 있으면 자동 로드
             const shopSnap = await getDoc(doc(db, 'shops', currentUser.uid));
             if (shopSnap.exists()) {
               const sData = shopSnap.data();
               setShopNameInput(sData.name || data.extraInfo || '');
+              setShopPetType(sData.petType || 'both');
               setShopRegion(sData.region || '서울');
               setShopDistrict(sData.district || '');
               setShopDesc(sData.desc || '');
@@ -411,18 +442,23 @@ export default function App() {
     try {
       if (isSignUp) {
         const res = await createUserWithEmailAndPassword(auth, email, password);
+        const defaultLabel = signUpPetSpecies === 'cat' ? '반려묘' : '반려견';
         const profileData = {
           uid: res.user.uid,
           email,
           name: name || '사용자',
           role,
-          extraInfo: extraInfo || (role === 'user' ? '반려견' : '포포 제휴 미용실'),
-          petDetail: role === 'user' ? { petName: extraInfo, petBreed: '', petWeight: '', petNote: '' } : null,
+          extraInfo: extraInfo || (role === 'user' ? defaultLabel : '포포 제휴 미용실'),
+          petDetail:
+            role === 'user'
+              ? { petSpecies: signUpPetSpecies, petName: extraInfo, petBreed: '', petWeight: '', petNote: '' }
+              : null,
           createdAt: serverTimestamp(),
         };
         await setDoc(doc(db, 'users', res.user.uid), profileData);
         setUserProfile(profileData);
         if (role === 'user') {
+          setPetSpecies(signUpPetSpecies);
           setPetName(extraInfo);
           detectMyLocation(false);
         } else {
@@ -444,12 +480,21 @@ export default function App() {
 
   const openShopBookingModal = (shop) => {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    const slots = shop.timeSlots && shop.timeSlots.length > 0 ? shop.timeSlots : ['10:00', '13:00', '15:00', '17:00'];
+    const slots =
+      shop.timeSlots && shop.timeSlots.length > 0
+        ? shop.timeSlots
+        : ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'];
+
+    const initialSpecies = shop.petType === 'cat' ? 'cat' : shop.petType === 'dog' ? 'dog' : petSpecies || 'dog';
+
     setBookingModalShop(shop);
+    setBookingPetSpecies(initialSpecies);
     setBookingDate(tomorrow);
     setBookingTime(slots[0]);
     setSelectedServiceIdx(0);
-    setCustomStyleDetail('얼굴 동그랗게 (곰돌이컷)');
+    setCustomStyleDetail(
+      initialSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
+    );
     setBookingNote('');
   };
 
@@ -470,10 +515,11 @@ export default function App() {
         : [{ name: '전체 미용 기본', price: bookingModalShop.price || '50,000원', duration: '1시간 30분' }];
 
     const chosenService = shopServices[selectedServiceIdx] || shopServices[0];
+    const speciesTag = bookingPetSpecies === 'cat' ? '🐱 고양이' : '🐶 강아지';
 
     const petSummary = petBreed
-      ? `${petName} (${petBreed}${petWeight ? `, ${petWeight}kg` : ''})`
-      : petName || userProfile?.extraInfo || '반려견';
+      ? `[${speciesTag}] ${petName} (${petBreed}${petWeight ? `, ${petWeight}kg` : ''})`
+      : `[${speciesTag}] ${petName || userProfile?.extraInfo || '반려동물'}`;
 
     try {
       await addDoc(collection(db, 'bookings'), {
@@ -482,6 +528,7 @@ export default function App() {
         shopRegion: `${bookingModalShop.region} ${bookingModalShop.district || ''}`.trim(),
         customerId: user.uid,
         customer: userProfile?.name || '보호자',
+        petSpecies: bookingPetSpecies,
         pet: petSummary,
         petNote: petNote || '특이사항 없음',
         service: `${chosenService.name} (${chosenService.price})`,
@@ -489,7 +536,7 @@ export default function App() {
         requestNote: bookingNote || '없음',
         bookingDate,
         bookingTime,
-        time: `${bookingDate} ${bookingTime}`,
+        time: `${bookingDate} ${bookingTime} (1시간30분)`,
         status: '대기 중',
         createdAt: serverTimestamp(),
       });
@@ -513,20 +560,20 @@ export default function App() {
   const handleSavePetDetail = async (e) => {
     e.preventDefault();
     try {
-      const petDetail = { petName, petBreed, petWeight, petNote };
-      const summary = petBreed ? `${petName} (${petBreed})` : petName;
+      const petDetail = { petSpecies, petName, petBreed, petWeight, petNote };
+      const prefix = petSpecies === 'cat' ? '🐱' : '🐶';
+      const summary = petBreed ? `${prefix} ${petName} (${petBreed})` : `${prefix} ${petName}`;
       await updateDoc(doc(db, 'users', user.uid), {
         extraInfo: summary,
         petDetail,
       });
       setUserProfile({ ...userProfile, extraInfo: summary, petDetail });
-      alert('반려견 프로필이 안전하게 저장되었습니다!');
+      alert('반려동물 프로필이 안전하게 저장되었습니다!');
     } catch (err) {
       alert('저장 실패: ' + err.message);
     }
   };
 
-  // 사장님: 매장명 + 사장님 정보 + 매장 설정 일괄 등록/수정
   const handleRegisterShop = async (e) => {
     e.preventDefault();
     const trimmedShopName = shopNameInput.trim();
@@ -548,13 +595,12 @@ export default function App() {
       .filter((s) => s.length > 0);
 
     const customServices = [
-      { name: shopSvc1Name || '전체 가위컷', price: shopSvc1Price || '65,000원', duration: '2시간' },
-      { name: shopSvc2Name || '클리핑 + 목욕', price: shopSvc2Price || '45,000원', duration: '1시간 30분' },
-      { name: shopSvc3Name || '스파 + 부분미용', price: shopSvc3Price || '35,000원', duration: '1시간' },
+      { name: shopSvc1Name || '전체 가위컷', price: shopSvc1Price || '65,000원', duration: '1시간 30분' },
+      { name: shopSvc2Name || '고양이 무마취 미용', price: shopSvc2Price || '70,000원', duration: '1시간 30분' },
+      { name: shopSvc3Name || '스파 + 부분미용', price: shopSvc3Price || '35,000원', duration: '1시간 30분' },
     ];
 
     try {
-      // 1. 사장님 사용자 프로필(users)에 변경된 매장명 및 성함 반영
       await updateDoc(doc(db, 'users', user.uid), {
         name: trimmedOwnerName,
         extraInfo: trimmedShopName,
@@ -565,23 +611,22 @@ export default function App() {
         extraInfo: trimmedShopName,
       });
 
-      // 2. 보호자 지도에 노출되는 매장 정보(shops) 등록/수정
       const existingShop = dbShops.find((s) => s.id === user.uid);
       await setDoc(doc(db, 'shops', user.uid), {
         ownerId: user.uid,
         name: trimmedShopName,
+        petType: shopPetType,
         region: shopRegion,
         district: shopDistrict || '중심가',
-        desc: shopDesc || '정성껏 케어하는 반려견 전문 미용실',
-        price: shopSvc2Price || shopPrice || '45,000원~',
+        desc: shopDesc || '정성껏 케어하는 강아지·고양이 전문 미용실',
+        price: shopSvc2Price || shopPrice || '50,000원~',
         lat: existingShop?.lat || baseCoord.lat + randomOffsetLat,
         lng: existingShop?.lng || baseCoord.lng + randomOffsetLng,
-        timeSlots: parsedSlots.length > 0 ? parsedSlots : ['10:00', '13:00', '15:00', '17:00'],
+        timeSlots: parsedSlots.length > 0 ? parsedSlots : ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
         services: customServices,
         createdAt: existingShop?.createdAt || serverTimestamp(),
       });
 
-      // 3. 매장명이 변경된 경우 기존 예약 내역의 매장명도 자동 동기화
       if (oldShopName && oldShopName !== trimmedShopName) {
         const myShopBookings = bookings.filter((b) => b.shopId === user.uid || b.shop === oldShopName);
         await Promise.all(
@@ -629,7 +674,7 @@ export default function App() {
             </div>
             <h1 className="text-2xl font-black text-gray-900 tracking-tight">포포그루밍</h1>
             <p className="text-xs text-gray-500 mt-1 font-medium">
-              {isSignUp ? '반려견과 사장님을 위한 스마트 미용 플랫폼' : '다시 오신 것을 환영합니다!'}
+              {isSignUp ? '강아지·고양이 보호자와 미용실을 잇는 스마트 플랫폼' : '다시 오신 것을 환영합니다!'}
             </p>
           </div>
 
@@ -646,7 +691,7 @@ export default function App() {
                         : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    🐶 반려견 보호자
+                    🐶🐱 멍냥 보호자
                   </button>
                   <button
                     type="button"
@@ -660,6 +705,33 @@ export default function App() {
                     ✂️ 미용실 사장님
                   </button>
                 </div>
+
+                {role === 'user' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSignUpPetSpecies('dog')}
+                      className={`py-2 rounded-xl text-xs font-bold border transition ${
+                        signUpPetSpecies === 'dog'
+                          ? 'bg-orange-50 border-orange-500 text-orange-700'
+                          : 'bg-white border-gray-200 text-gray-500'
+                      }`}
+                    >
+                      🐶 강아지 보호자
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSignUpPetSpecies('cat')}
+                      className={`py-2 rounded-xl text-xs font-bold border transition ${
+                        signUpPetSpecies === 'cat'
+                          ? 'bg-purple-50 border-purple-500 text-purple-700'
+                          : 'bg-white border-gray-200 text-gray-500'
+                      }`}
+                    >
+                      🐱 고양이 집사
+                    </button>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-[11px] font-bold text-gray-600 mb-1 ml-1">이름</label>
@@ -675,11 +747,21 @@ export default function App() {
 
                 <div>
                   <label className="block text-[11px] font-bold text-gray-600 mb-1 ml-1">
-                    {role === 'user' ? '반려견 이름' : '미용실 상호명'}
+                    {role === 'user'
+                      ? signUpPetSpecies === 'cat'
+                        ? '반려묘 이름'
+                        : '반려견 이름'
+                      : '미용실 상호명'}
                   </label>
                   <input
                     type="text"
-                    placeholder={role === 'user' ? '예: 초코' : '예: 포포 멍뭉이 미용실'}
+                    placeholder={
+                      role === 'user'
+                        ? signUpPetSpecies === 'cat'
+                          ? '예: 나비'
+                          : '예: 초코'
+                        : '예: 포포 멍냥 미용실'
+                    }
                     value={extraInfo}
                     onChange={(e) => setExtraInfo(e.target.value)}
                     required
@@ -738,6 +820,7 @@ export default function App() {
   if (userProfile.role === 'user') {
     const allShops = [...dbShops, ...DEFAULT_SHOPS].map((shop) => ({
       ...shop,
+      petType: shop.petType || 'dog',
       distanceKm: myLocation ? calcDistanceKm(myLocation.lat, myLocation.lng, shop.lat, shop.lng) : null,
     }));
 
@@ -746,12 +829,16 @@ export default function App() {
     const filteredShops = allShops
       .filter((shop) => {
         const matchesRegion = selectedRegion === '전체' || shop.region === selectedRegion;
+        const matchesSpecies =
+          selectedSpeciesFilter === 'all' ||
+          shop.petType === 'both' ||
+          shop.petType === selectedSpeciesFilter;
         const keyword = searchTerm.toLowerCase();
         const matchesSearch =
           shop.name.toLowerCase().includes(keyword) ||
           (shop.district && shop.district.toLowerCase().includes(keyword)) ||
           (shop.desc && shop.desc.toLowerCase().includes(keyword));
-        return matchesRegion && matchesSearch;
+        return matchesRegion && matchesSpecies && matchesSearch;
       })
       .sort((a, b) => {
         if (a.distanceKm && b.distanceKm) {
@@ -763,12 +850,12 @@ export default function App() {
     const modalTimeSlots =
       bookingModalShop?.timeSlots && bookingModalShop.timeSlots.length > 0
         ? bookingModalShop.timeSlots
-        : ['10:00', '13:00', '15:00', '17:00'];
+        : ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'];
 
     const modalServices =
       bookingModalShop?.services && bookingModalShop.services.length > 0
         ? bookingModalShop.services
-        : [{ name: '전체 미용 기본', price: bookingModalShop?.price || '50,000원', duration: '1시간 30분' }];
+        : [{ name: '전체 미용 기본 (1시간30분 소요)', price: bookingModalShop?.price || '50,000원', duration: '1시간 30분' }];
 
     const bookedTimesForShopAndDate = bookingModalShop
       ? bookings
@@ -783,13 +870,30 @@ export default function App() {
 
     const todayStr = new Date().toISOString().split('T')[0];
 
+    const styleOptionsBySpecies =
+      bookingPetSpecies === 'cat'
+        ? [
+            '무마취 전체 클리핑 (사자컷/올빡)',
+            '장모종 엉킴 제거 + 썸머컷',
+            '저자극 목욕 + 죽은털(언더코트) 케어',
+            '위생미용 + 발톱·귀 집중 관리',
+          ]
+        : [
+            '얼굴 동그랗게 (곰돌이컷)',
+            '전체 가위컷 (스포팅)',
+            '깔끔 클리핑 (3mm/6mm)',
+            '위생·목욕 중심 (최소 컷)',
+          ];
+
     return (
       <div className="min-h-screen bg-gray-50 pb-24">
         <header className="bg-white/80 backdrop-blur-md shadow-sm px-4 py-3.5 flex justify-between items-center sticky top-0 z-20 border-b border-gray-100">
           <div className="flex items-center space-x-2">
             <div className="bg-orange-100 text-orange-600 p-1.5 rounded-xl text-base shadow-sm">🐾</div>
             <div>
-              <p className="text-[11px] text-gray-400 font-bold leading-none">반려견 보호자</p>
+              <p className="text-[11px] text-gray-400 font-bold leading-none">
+                {petSpecies === 'cat' ? '반려묘 집사' : '반려견 보호자'}
+              </p>
               <h2 className="font-extrabold text-gray-800 text-sm mt-0.5">{userProfile.name}님</h2>
             </div>
           </div>
@@ -833,8 +937,8 @@ export default function App() {
                   : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              <span>🐶</span>
-              <span>반려견 관리</span>
+              <span>{petSpecies === 'cat' ? '🐱' : '🐶'}</span>
+              <span>내 아이 관리</span>
             </button>
           </div>
         </div>
@@ -842,12 +946,37 @@ export default function App() {
         <main className="max-w-md mx-auto p-4 space-y-4">
           {userTab === 'search' && (
             <>
+              <div className="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
+                {[
+                  { id: 'all', label: '🐾 전체 미용실' },
+                  { id: 'dog', label: '🐶 강아지' },
+                  { id: 'cat', label: '🐱 고양이 (무마취)' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setSelectedSpeciesFilter(item.id);
+                      setSelectedMapShop(null);
+                    }}
+                    className={`py-2 rounded-xl text-xs font-extrabold transition ${
+                      selectedSpeciesFilter === item.id
+                        ? item.id === 'cat'
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'bg-orange-500 text-white shadow-sm'
+                        : 'text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="space-y-2.5">
                 <div className="relative">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-gray-400">🔍</span>
                   <input
                     type="text"
-                    placeholder="지역(구/동), 미용실 이름, 특징 검색"
+                    placeholder="지역(구/동), 미용실 이름, 무마취·스파 검색"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white border border-gray-200 rounded-2xl pl-10 pr-4 py-3 text-sm shadow-sm focus:border-orange-500 focus:outline-none transition"
@@ -916,12 +1045,19 @@ export default function App() {
                     <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-orange-400 flex justify-between items-center transition">
                       <div className="pr-2 space-y-1">
                         <div className="flex items-center space-x-1.5 flex-wrap">
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                              getPetTypeBadge(selectedMapShop.petType).bg
+                            }`}
+                          >
+                            {getPetTypeBadge(selectedMapShop.petType).label}
+                          </span>
                           <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
                             {selectedMapShop.region} {selectedMapShop.district}
                           </span>
                           {selectedMapShop.distanceKm && (
                             <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
-                              내 위치에서 {selectedMapShop.distanceKm}km
+                              {selectedMapShop.distanceKm}km
                             </span>
                           )}
                         </div>
@@ -938,7 +1074,7 @@ export default function App() {
                     </div>
                   ) : (
                     <p className="text-center text-xs text-gray-400 py-1 font-medium">
-                      👆 지도 위의 주황색 🐾 매장 핀을 누르면 상세 정보와 예약 버튼이 나타납니다.
+                      👆 지도 위의 매장 핀을 누르면 상세 정보와 예약 버튼이 나타납니다.
                     </p>
                   )}
                 </div>
@@ -955,41 +1091,47 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {filteredShops.map((shop) => (
-                      <div
-                        key={shop.id}
-                        onClick={() => {
-                          setSelectedMapShop(shop);
-                          if (viewMode === 'list') setViewMode('map');
-                        }}
-                        className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md transition cursor-pointer"
-                      >
-                        <div className="pr-2 space-y-1">
-                          <div className="flex items-center space-x-1.5 flex-wrap">
-                            <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                              {shop.region} {shop.district}
-                            </span>
-                            {shop.distanceKm && (
-                              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
-                                {shop.distanceKm}km
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="font-extrabold text-gray-900 text-sm">{shop.name}</h4>
-                          <p className="text-xs text-gray-500 font-medium">{shop.desc}</p>
-                          <p className="text-xs font-bold text-orange-600">{shop.price || '50,000원~'}</p>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openShopBookingModal(shop);
+                    {filteredShops.map((shop) => {
+                      const badge = getPetTypeBadge(shop.petType);
+                      return (
+                        <div
+                          key={shop.id}
+                          onClick={() => {
+                            setSelectedMapShop(shop);
+                            if (viewMode === 'list') setViewMode('map');
                           }}
-                          className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white text-xs px-3.5 py-2.5 rounded-xl font-bold shadow-sm transition active:scale-95"
+                          className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center hover:shadow-md transition cursor-pointer"
                         >
-                          예약하기
-                        </button>
-                      </div>
-                    ))}
+                          <div className="pr-2 space-y-1">
+                            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badge.bg}`}>
+                                {badge.label}
+                              </span>
+                              <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
+                                {shop.region} {shop.district}
+                              </span>
+                              {shop.distanceKm && (
+                                <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
+                                  {shop.distanceKm}km
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="font-extrabold text-gray-900 text-sm">{shop.name}</h4>
+                            <p className="text-xs text-gray-500 font-medium">{shop.desc}</p>
+                            <p className="text-xs font-bold text-orange-600">{shop.price || '50,000원~'}</p>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openShopBookingModal(shop);
+                            }}
+                            className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white text-xs px-3.5 py-2.5 rounded-xl font-bold shadow-sm transition active:scale-95"
+                          >
+                            예약하기
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1025,10 +1167,11 @@ export default function App() {
                       </span>
                     </div>
                     <div className="text-xs space-y-1 text-gray-600 font-medium bg-gray-50 p-3 rounded-xl">
-                      <p>🗓️ 예약 일시: <span className="font-bold text-gray-800">{b.time}</span></p>
+                      <p>🐾 대상: <span className="font-bold text-gray-800">{b.pet}</span></p>
+                      <p>🗓️ 예약 일시 (1시간30분 코스): <span className="font-bold text-gray-800">{b.time}</span></p>
                       <p>✂️ 선택 메뉴: <span className="font-bold text-gray-800">{b.service || '기본 미용'}</span></p>
                       {b.styleDetail && (
-                        <p>🐩 미용 스타일: <span className="font-bold text-orange-600">{b.styleDetail}</span></p>
+                        <p>✨ 미용 방식: <span className="font-bold text-orange-600">{b.styleDetail}</span></p>
                       )}
                       {b.requestNote && b.requestNote !== '없음' && (
                         <p>💬 요청사항: <span className="text-gray-700">{b.requestNote}</span></p>
@@ -1053,12 +1196,42 @@ export default function App() {
           {userTab === 'pet' && (
             <form onSubmit={handleSavePetDetail} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
               <div>
-                <h3 className="font-black text-gray-900 text-base">🐶 반려견 상세 프로필</h3>
+                <h3 className="font-black text-gray-900 text-base">🐾 반려동물 상세 프로필</h3>
                 <p className="text-xs text-gray-400 mt-0.5">미용 예약 시 사장님께 안전하게 전달됩니다.</p>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">반려견 이름</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">반려동물 구분</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPetSpecies('dog')}
+                    className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
+                      petSpecies === 'dog'
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-gray-50 text-gray-600 border-gray-200'
+                    }`}
+                  >
+                    🐶 강아지
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPetSpecies('cat')}
+                    className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
+                      petSpecies === 'cat'
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'bg-gray-50 text-gray-600 border-gray-200'
+                    }`}
+                  >
+                    🐱 고양이
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {petSpecies === 'cat' ? '반려묘 이름' : '반려견 이름'}
+                </label>
                 <input
                   type="text"
                   value={petName}
@@ -1070,10 +1243,12 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">견종</label>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {petSpecies === 'cat' ? '묘종' : '견종'}
+                  </label>
                   <input
                     type="text"
-                    placeholder="예: 말티푸"
+                    placeholder={petSpecies === 'cat' ? '예: 코리안숏헤어, 브리티시' : '예: 말티푸'}
                     value={petBreed}
                     onChange={(e) => setPetBreed(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
@@ -1092,7 +1267,11 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">특이사항 (입질, 겁 많음 등)</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  {petSpecies === 'cat'
+                    ? '특이사항 (예민함, 하악질, 무마취 경험 등)'
+                    : '특이사항 (입질, 겁 많음, 피부질환 등)'}
+                </label>
                 <textarea
                   rows="3"
                   placeholder="미용사님이 미리 참고해야 할 사항을 적어주세요."
@@ -1112,17 +1291,26 @@ export default function App() {
           )}
         </main>
 
-        {/* 제휴 업체별 날짜 · 시간 · 미용 방식 상세 선택 모달 */}
+        {/* 제휴 업체별 날짜 · 1시간30분 단위 시간 슬롯 · 미용 방식 상세 선택 모달 */}
         {bookingModalShop && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
               <div className="flex justify-between items-start border-b border-gray-100 pb-3">
                 <div>
-                  <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                    {bookingModalShop.region} {bookingModalShop.district}
-                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                        getPetTypeBadge(bookingModalShop.petType).bg
+                      }`}
+                    >
+                      {getPetTypeBadge(bookingModalShop.petType).label}
+                    </span>
+                    <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
+                      {bookingModalShop.region} {bookingModalShop.district}
+                    </span>
+                  </div>
                   <h3 className="font-black text-gray-900 text-base mt-1">{bookingModalShop.name}</h3>
-                  <p className="text-[11px] text-gray-400 mt-0.5">{bookingModalShop.desc}</p>
+                  <p className="text-[11px] text-gray-400 mt-0.5">⏱️ 모든 미용 코스는 1시간 30분 단위로 진행됩니다.</p>
                 </div>
                 <button
                   onClick={() => setBookingModalShop(null)}
@@ -1133,6 +1321,48 @@ export default function App() {
               </div>
 
               <form onSubmit={handleConfirmBooking} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
+                    🐾 미용 대상 선택
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={bookingModalShop.petType === 'cat'}
+                      onClick={() => {
+                        setBookingPetSpecies('dog');
+                        setCustomStyleDetail('얼굴 동그랗게 (곰돌이컷)');
+                      }}
+                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                        bookingModalShop.petType === 'cat'
+                          ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
+                          : bookingPetSpecies === 'dog'
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'bg-white text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      🐶 강아지 미용
+                    </button>
+                    <button
+                      type="button"
+                      disabled={bookingModalShop.petType === 'dog'}
+                      onClick={() => {
+                        setBookingPetSpecies('cat');
+                        setCustomStyleDetail('무마취 전체 클리핑 (사자컷/올빡)');
+                      }}
+                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                        bookingModalShop.petType === 'dog'
+                          ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
+                          : bookingPetSpecies === 'cat'
+                          ? 'bg-purple-600 text-white border-purple-600'
+                          : 'bg-white text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      🐱 고양이 미용
+                    </button>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
                     1️⃣ 예약 날짜 선택
@@ -1150,13 +1380,14 @@ export default function App() {
                   />
                 </div>
 
+                {/* 1시간 30분 단위 타임슬롯 선택 버튼 */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="block text-xs font-extrabold text-gray-700">
-                      2️⃣ 매장별 가능 시간 선택
+                      2️⃣ 1시간 30분 단위 시간 선택
                     </label>
                     <span className="text-[10px] text-gray-400 font-semibold">
-                      회색은 예약 마감 시간
+                      회색은 예약 마감
                     </span>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
@@ -1186,7 +1417,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
-                    3️⃣ 미용 메뉴 선택 ({bookingModalShop.name} 전용)
+                    3️⃣ 미용 메뉴 선택 (1시간 30분 코스)
                   </label>
                   <div className="space-y-2">
                     {modalServices.map((svc, idx) => {
@@ -1203,7 +1434,7 @@ export default function App() {
                         >
                           <div>
                             <p className="text-xs font-extrabold text-gray-900">{svc.name}</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">소요 약 {svc.duration}</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">⏱️ 소요 시간: 1시간 30분</p>
                           </div>
                           <span className="text-xs font-black text-orange-600">{svc.price}</span>
                         </div>
@@ -1214,22 +1445,19 @@ export default function App() {
 
                 <div>
                   <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
-                    4️⃣ 원하는 미용 방식 / 컷 스타일
+                    4️⃣ {bookingPetSpecies === 'cat' ? '고양이 미용 방식 선택' : '강아지 미용 방식 / 컷 스타일'}
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {[
-                      '얼굴 동그랗게 (곰돌이컷)',
-                      '전체 가위컷 (스포팅)',
-                      '깔끔 클리핑 (3mm/6mm)',
-                      '위생·목욕 중심 (최소 컷)',
-                    ].map((styleOption) => (
+                    {styleOptionsBySpecies.map((styleOption) => (
                       <button
                         key={styleOption}
                         type="button"
                         onClick={() => setCustomStyleDetail(styleOption)}
                         className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border text-left transition ${
                           customStyleDetail === styleOption
-                            ? 'bg-slate-900 text-white border-slate-900'
+                            ? bookingPetSpecies === 'cat'
+                              ? 'bg-purple-700 text-white border-purple-700'
+                              : 'bg-slate-900 text-white border-slate-900'
                             : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                         }`}
                       >
@@ -1245,7 +1473,7 @@ export default function App() {
                   </label>
                   <input
                     type="text"
-                    placeholder="예: 발바닥 털은 바짝 밀어주시고 귀는 길게 남겨주세요"
+                    placeholder="예: 1시간 30분 내에 안전하게 마무리 부탁드려요"
                     value={bookingNote}
                     onChange={(e) => setBookingNote(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:bg-white focus:outline-none"
@@ -1383,10 +1611,10 @@ export default function App() {
 
                     <div className="space-y-1.5 bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 text-xs">
                       <p className="font-bold text-white text-sm">👤 {item.customer} 보호자님</p>
-                      <p className="text-slate-300">🐶 반려견: <span className="font-bold text-white">{item.pet}</span></p>
+                      <p className="text-slate-300">🐾 대상 아이: <span className="font-bold text-white">{item.pet}</span></p>
                       <p className="text-orange-400 font-semibold">✂️ 선택 메뉴: {item.service || '기본 미용'}</p>
                       {item.styleDetail && (
-                        <p className="text-amber-300 font-medium">🐩 미용 방식: {item.styleDetail}</p>
+                        <p className="text-amber-300 font-medium">✨ 미용 방식: {item.styleDetail}</p>
                       )}
                       {item.petNote && item.petNote !== '특이사항 없음' && (
                         <p className="text-rose-400 font-medium">⚠️ 아이 특이사항: {item.petNote}</p>
@@ -1421,32 +1649,54 @@ export default function App() {
             <div>
               <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                매장명, 사장님 성함, 지역, 예약 시간대 및 메뉴를 언제든 변경할 수 있습니다.
+                1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-orange-400 mb-1">매장명 (상호 변경 가능)</label>
+                <label className="block text-xs font-bold text-orange-400 mb-1">매장명</label>
                 <input
                   type="text"
-                  placeholder="예: 포포 멍뭉이 미용실"
                   value={shopNameInput}
                   onChange={(e) => setShopNameInput(e.target.value)}
                   required
-                  className="w-full bg-slate-900 border border-orange-500/50 rounded-2xl px-3.5 py-3 text-sm text-white font-bold focus:border-orange-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-orange-500/50 rounded-2xl px-3.5 py-3 text-sm text-white font-bold focus:outline-none"
                 />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">사장님 성함</label>
                 <input
                   type="text"
-                  placeholder="예: 홍길동"
                   value={ownerNameInput}
                   onChange={(e) => setOwnerNameInput(e.target.value)}
                   required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:border-orange-500 focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:outline-none"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">취급 미용 대상 선택</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'dog', label: '🐶 강아지 전용' },
+                  { id: 'cat', label: '🐱 고양이 전용' },
+                  { id: 'both', label: '🐶🐱 멍냥 모두' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setShopPetType(opt.id)}
+                    className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                      shopPetType === opt.id
+                        ? 'bg-orange-500 text-white border-orange-500'
+                        : 'bg-slate-900 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -1480,7 +1730,7 @@ export default function App() {
               <label className="block text-xs font-bold text-slate-300 mb-1">매장 한 줄 소개</label>
               <input
                 type="text"
-                placeholder="예: 가위컷 전문 · 스파 케어 · 100% 예약제"
+                placeholder="예: 1시간30분 타임 집중 프리미엄 케어"
                 value={shopDesc}
                 onChange={(e) => setShopDesc(e.target.value)}
                 required
@@ -1489,10 +1739,11 @@ export default function App() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">예약 가능 시간대 (쉼표로 구분)</label>
+              <label className="block text-xs font-bold text-slate-300 mb-1">
+                1시간30분 단위 타임슬롯 (쉼표로 구분)
+              </label>
               <input
                 type="text"
-                placeholder="예: 10:00, 12:00, 14:00, 16:00, 18:00"
                 value={shopTimeSlotsInput}
                 onChange={(e) => setShopTimeSlotsInput(e.target.value)}
                 required
@@ -1501,7 +1752,7 @@ export default function App() {
             </div>
 
             <div className="space-y-2 pt-1">
-              <label className="block text-xs font-bold text-orange-400">✂️ 우리 매장 대표 미용 메뉴 3종</label>
+              <label className="block text-xs font-bold text-orange-400">✂️ 1시간 30분 대표 코스 3종</label>
               <div className="grid grid-cols-3 gap-2">
                 <input
                   type="text"
@@ -1556,7 +1807,7 @@ export default function App() {
               type="submit"
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
             >
-              매장명 및 정보 변경 저장하기
+              타임슬롯 및 정보 저장하기
             </button>
           </form>
         )}

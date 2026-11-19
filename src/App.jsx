@@ -22,7 +22,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 
-// 기본 제휴 미용실 (1시간 30분 단위 타임슬롯 적용)
+// 기본 제휴 미용실 (1시간 30분 단위 타임슬롯 & 기본 평점 데이터 포함)
 const DEFAULT_SHOPS = [
   {
     id: 'default-1',
@@ -32,6 +32,8 @@ const DEFAULT_SHOPS = [
     district: '남동구 구월동',
     desc: '강아지 스파/가위컷 전문 · 100% 예약제',
     price: '45,000원~',
+    baseRating: 4.9,
+    baseReviewCount: 28,
     lat: 37.4482,
     lng: 126.7015,
     timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
@@ -49,6 +51,8 @@ const DEFAULT_SHOPS = [
     district: '마포구 연남동',
     desc: '고양이 전문 무마취 미용 · 강아지 출입 분리',
     price: '60,000원~',
+    baseRating: 4.8,
+    baseReviewCount: 19,
     lat: 37.5612,
     lng: 126.9248,
     timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
@@ -66,6 +70,8 @@ const DEFAULT_SHOPS = [
     district: '연수구 송도동',
     desc: '강아지·고양이 분리 묘실 운영 · 노령 반려동물 전문',
     price: '55,000원~',
+    baseRating: 4.9,
+    baseReviewCount: 34,
     lat: 37.3827,
     lng: 126.6563,
     timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
@@ -83,6 +89,8 @@ const DEFAULT_SHOPS = [
     district: '강남구 신사동',
     desc: '강아지 스포팅 & 고양이 전담 핸들러 상주',
     price: '65,000원~',
+    baseRating: 4.7,
+    baseReviewCount: 41,
     lat: 37.5236,
     lng: 127.0232,
     timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30', '19:00'],
@@ -100,6 +108,8 @@ const DEFAULT_SHOPS = [
     district: '성남시 분당구',
     desc: '100% 고양이 전용 예약제 · 호르몬 디퓨저 케어',
     price: '60,000원~',
+    baseRating: 5.0,
+    baseReviewCount: 15,
     lat: 37.3826,
     lng: 127.1189,
     timeSlots: ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'],
@@ -142,8 +152,8 @@ function getPetTypeBadge(petType) {
   return { label: '🐶 강아지 전문', bg: 'bg-amber-100 text-amber-800', icon: '🐶', color: '#f97316' };
 }
 
-// 인터랙티브 지도 컴포넌트
-function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop }) {
+// 인터랙티브 지도 컴포넌트 (모달 활성화 시 레이어 충돌 방지 처리)
+function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop, isOverlayOpen }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersLayerRef = useRef(null);
@@ -248,32 +258,40 @@ function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop
   }, [shops, myLocation, selectedShop]);
 
   return (
-    <div className="relative w-full h-[330px] rounded-3xl overflow-hidden shadow-md border border-gray-200 bg-gray-100">
+    <div
+      className={`relative w-full h-[330px] rounded-3xl overflow-hidden shadow-md border border-gray-200 bg-gray-100 ${
+        isOverlayOpen ? 'invisible pointer-events-none' : 'z-0'
+      }`}
+    >
       <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-      <button
-        type="button"
-        onClick={onLocateMe}
-        className="absolute bottom-3 right-3 z-[400] bg-white hover:bg-gray-50 text-slate-800 px-3.5 py-2 rounded-2xl shadow-lg border border-gray-200 text-xs font-extrabold flex items-center space-x-1.5 active:scale-95 transition"
-      >
-        <span className="text-blue-600">📍</span>
-        <span>내 위치</span>
-      </button>
+      {!isOverlayOpen && (
+        <>
+          <button
+            type="button"
+            onClick={onLocateMe}
+            className="absolute bottom-3 right-3 z-[400] bg-white hover:bg-gray-50 text-slate-800 px-3.5 py-2 rounded-2xl shadow-lg border border-gray-200 text-xs font-extrabold flex items-center space-x-1.5 active:scale-95 transition"
+          >
+            <span className="text-blue-600">📍</span>
+            <span>내 위치</span>
+          </button>
 
-      <div className="absolute top-3 left-3 z-[400] bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-2.5 text-[10px] font-bold text-gray-700">
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
-          <span>내 위치</span>
-        </span>
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
-          <span>강아지/공통</span>
-        </span>
-        <span className="flex items-center space-x-1">
-          <span className="w-2 h-2 rounded-full bg-purple-600 inline-block"></span>
-          <span>고양이전문</span>
-        </span>
-      </div>
+          <div className="absolute top-3 left-3 z-[400] bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-2.5 text-[10px] font-bold text-gray-700">
+            <span className="flex items-center space-x-1">
+              <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
+              <span>내 위치</span>
+            </span>
+            <span className="flex items-center space-x-1">
+              <span className="w-2 h-2 rounded-full bg-orange-500 inline-block"></span>
+              <span>강아지/공통</span>
+            </span>
+            <span className="flex items-center space-x-1">
+              <span className="w-2 h-2 rounded-full bg-purple-600 inline-block"></span>
+              <span>고양이전문</span>
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -292,9 +310,11 @@ export default function App() {
   const [signUpPetSpecies, setSignUpPetSpecies] = useState('dog');
   const [extraInfo, setExtraInfo] = useState('');
 
-  // 실시간 DB 데이터
+  // 실시간 DB 데이터 (예약, 매장, 일정차단, 리뷰)
   const [bookings, setBookings] = useState([]);
   const [dbShops, setDbShops] = useState([]);
+  const [blockedSlots, setBlockedSlots] = useState([]);
+  const [reviews, setReviews] = useState([]);
 
   // 보호자 화면 탭 & 검색 & 지도 상태
   const [userTab, setUserTab] = useState('search');
@@ -315,6 +335,11 @@ export default function App() {
   const [customStyleDetail, setCustomStyleDetail] = useState('얼굴 동그랗게 (곰돌이컷)');
   const [bookingNote, setBookingNote] = useState('');
 
+  // 보호자 리뷰 작성 모달 상태
+  const [reviewModalBooking, setReviewModalBooking] = useState(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState('');
+
   // 보호자 반려동물 상세 정보 상태
   const [petSpecies, setPetSpecies] = useState('dog');
   const [petName, setPetName] = useState('');
@@ -322,8 +347,8 @@ export default function App() {
   const [petWeight, setPetWeight] = useState('');
   const [petNote, setPetNote] = useState('');
 
-  // 사장님 화면 탭 & 매장/사장님 정보 수정 상태 (1시간 30분 단위 기본 슬롯 제공)
-  const [ownerTab, setOwnerTab] = useState('bookings');
+  // 사장님 화면 탭 & 매장/사장님 정보 수정 상태
+  const [ownerTab, setOwnerTab] = useState('bookings'); // 'bookings' | 'schedule' | 'shop'
   const [ownerNameInput, setOwnerNameInput] = useState('');
   const [shopNameInput, setShopNameInput] = useState('');
   const [shopPetType, setShopPetType] = useState('both');
@@ -339,6 +364,17 @@ export default function App() {
   const [shopSvc3Name, setShopSvc3Name] = useState('탄산 스파 + 부분 위생미용');
   const [shopSvc3Price, setShopSvc3Price] = useState('35,000원');
   const [onlyMyShopBookings, setOnlyMyShopBookings] = useState(false);
+
+  // 사장님 일정 차단(휴무/브레이크타임) 상태
+  const [blockDate, setBlockDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [blockType, setBlockType] = useState('slot'); // 'full' | 'slot'
+  const [blockTimeSlot, setBlockTimeSlot] = useState('13:00');
+  const [blockReason, setBlockReason] = useState('점심시간 / 휴게');
+
+  // 사장님 미용 완료 케어 일지 모달 상태
+  const [careModalBooking, setCareModalBooking] = useState(null);
+  const [careCondition, setCareCondition] = useState('컨디션 좋음 · 협조적');
+  const [careNoteInput, setCareNoteInput] = useState('');
 
   const detectMyLocation = (showAlert = false) => {
     if (!navigator.geolocation) {
@@ -431,9 +467,21 @@ export default function App() {
       setDbShops(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
+    const qBlocked = query(collection(db, 'blockedSlots'), orderBy('createdAt', 'desc'));
+    const unsubBlocked = onSnapshot(qBlocked, (snapshot) => {
+      setBlockedSlots(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
+    const qReviews = query(collection(db, 'reviews'), orderBy('createdAt', 'desc'));
+    const unsubReviews = onSnapshot(qReviews, (snapshot) => {
+      setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+
     return () => {
       unsubBookings();
       unsubShops();
+      unsubBlocked();
+      unsubReviews();
     };
   }, [user]);
 
@@ -490,7 +538,7 @@ export default function App() {
     setBookingModalShop(shop);
     setBookingPetSpecies(initialSpecies);
     setBookingDate(tomorrow);
-    setBookingTime(slots[0]);
+    setBookingTime('');
     setSelectedServiceIdx(0);
     setCustomStyleDetail(
       initialSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
@@ -512,7 +560,7 @@ export default function App() {
     const shopServices =
       bookingModalShop.services && bookingModalShop.services.length > 0
         ? bookingModalShop.services
-        : [{ name: '전체 미용 기본', price: bookingModalShop.price || '50,000원', duration: '1시간 30분' }];
+        : [{ name: '전체 미용 기본 (1시간30분 소요)', price: bookingModalShop.price || '50,000원', duration: '1시간 30분' }];
 
     const chosenService = shopServices[selectedServiceIdx] || shopServices[0];
     const speciesTag = bookingPetSpecies === 'cat' ? '🐱 고양이' : '🐶 강아지';
@@ -538,6 +586,7 @@ export default function App() {
         bookingTime,
         time: `${bookingDate} ${bookingTime} (1시간30분)`,
         status: '대기 중',
+        reviewed: false,
         createdAt: serverTimestamp(),
       });
       alert(`"${bookingModalShop.name}" (${bookingDate} ${bookingTime}) 예약 신청이 완료되었습니다!`);
@@ -557,6 +606,36 @@ export default function App() {
     }
   };
 
+  // 보호자: 미용 완료 후 별점/후기 등록
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewModalBooking) return;
+    try {
+      await addDoc(collection(db, 'reviews'), {
+        bookingId: reviewModalBooking.id,
+        shopId: reviewModalBooking.shopId,
+        shopName: reviewModalBooking.shop,
+        customerId: user.uid,
+        customerName: userProfile?.name || '보호자',
+        pet: reviewModalBooking.pet,
+        rating: Number(reviewRating),
+        comment: reviewText.trim() || '꼼꼼하고 친절하게 잘 미용해 주셨어요!',
+        createdAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, 'bookings', reviewModalBooking.id), {
+        reviewed: true,
+        reviewRating: Number(reviewRating),
+        reviewComment: reviewText.trim() || '꼼꼼하고 친절하게 잘 미용해 주셨어요!',
+      });
+      alert('소중한 별점 후기가 등록되었습니다!');
+      setReviewModalBooking(null);
+      setReviewText('');
+      setReviewRating(5);
+    } catch (err) {
+      alert('후기 등록 실패: ' + err.message);
+    }
+  };
+
   const handleSavePetDetail = async (e) => {
     e.preventDefault();
     try {
@@ -571,6 +650,62 @@ export default function App() {
       alert('반려동물 프로필이 안전하게 저장되었습니다!');
     } catch (err) {
       alert('저장 실패: ' + err.message);
+    }
+  };
+
+  // 사장님: 일정 차단 등록 (날짜 전체 휴무 또는 특정 타임슬롯 차단)
+  const handleAddBlockedSlot = async (e) => {
+    e.preventDefault();
+    if (!blockDate) {
+      alert('차단할 날짜를 선택해 주세요.');
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'blockedSlots'), {
+        shopId: user.uid,
+        shopName: userProfile.extraInfo,
+        date: blockDate,
+        type: blockType, // 'full' | 'slot'
+        timeSlot: blockType === 'full' ? 'ALL' : blockTimeSlot,
+        reason: blockReason.trim() || (blockType === 'full' ? '매장 휴무일' : '일정 마감'),
+        createdAt: serverTimestamp(),
+      });
+      alert(
+        blockType === 'full'
+          ? `${blockDate} 하루 전체 예약이 차단되었습니다.`
+          : `${blockDate} ${blockTimeSlot} 타임 예약이 차단되었습니다.`
+      );
+    } catch (err) {
+      alert('일정 차단 실패: ' + err.message);
+    }
+  };
+
+  const handleRemoveBlockedSlot = async (id) => {
+    try {
+      await deleteDoc(doc(db, 'blockedSlots', id));
+    } catch (err) {
+      alert('차단 해제 실패: ' + err.message);
+    }
+  };
+
+  // 사장님: 미용 완료 처리 + 그루머 케어 일지 저장
+  const handleCompleteWithCareNote = async (e) => {
+    e.preventDefault();
+    if (!careModalBooking) return;
+    try {
+      await updateDoc(doc(db, 'bookings', careModalBooking.id), {
+        status: '미용 완료',
+        careReport: {
+          condition: careCondition,
+          note: careNoteInput.trim() || '오늘 미용도 스트레스 없이 얌전히 잘 받았습니다!',
+          completedAt: new Date().toLocaleDateString('ko-KR'),
+        },
+      });
+      alert('미용 완료 처리 및 보호자 케어 일지가 전송되었습니다!');
+      setCareModalBooking(null);
+      setCareNoteInput('');
+    } catch (err) {
+      alert('케어 일지 저장 실패: ' + err.message);
     }
   };
 
@@ -818,11 +953,23 @@ export default function App() {
 
   // [화면 B] 이용자(보호자) 홈 화면
   if (userProfile.role === 'user') {
-    const allShops = [...dbShops, ...DEFAULT_SHOPS].map((shop) => ({
-      ...shop,
-      petType: shop.petType || 'dog',
-      distanceKm: myLocation ? calcDistanceKm(myLocation.lat, myLocation.lng, shop.lat, shop.lng) : null,
-    }));
+    const allShops = [...dbShops, ...DEFAULT_SHOPS].map((shop) => {
+      const shopReviews = reviews.filter((r) => r.shopId === shop.id || r.shopName === shop.name);
+      const baseCount = shop.baseReviewCount || 0;
+      const baseSum = (shop.baseRating || 5.0) * baseCount;
+      const liveSum = shopReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+      const totalReviews = baseCount + shopReviews.length;
+      const avgRating = totalReviews > 0 ? ((baseSum + liveSum) / totalReviews).toFixed(1) : '5.0';
+
+      return {
+        ...shop,
+        petType: shop.petType || 'dog',
+        avgRating,
+        totalReviews,
+        shopReviews,
+        distanceKm: myLocation ? calcDistanceKm(myLocation.lat, myLocation.lng, shop.lat, shop.lng) : null,
+      };
+    });
 
     const myBookings = bookings.filter((b) => b.customerId === user.uid);
 
@@ -857,16 +1004,28 @@ export default function App() {
         ? bookingModalShop.services
         : [{ name: '전체 미용 기본 (1시간30분 소요)', price: bookingModalShop?.price || '50,000원', duration: '1시간 30분' }];
 
+    // 1) 이미 예약된 시간 조회
     const bookedTimesForShopAndDate = bookingModalShop
       ? bookings
           .filter(
             (b) =>
-              b.shop === bookingModalShop.name &&
+              (b.shopId === bookingModalShop.id || b.shop === bookingModalShop.name) &&
               b.status !== '거절됨' &&
               (b.bookingDate === bookingDate || (b.time && b.time.startsWith(bookingDate)))
           )
           .map((b) => b.bookingTime || (b.time ? b.time.split(' ')[1] : ''))
       : [];
+
+    // 2) 사장님이 차단(휴무/브레이크타임)한 일정 조회
+    const shopBlocksOnDate = bookingModalShop
+      ? blockedSlots.filter(
+          (blk) =>
+            (blk.shopId === bookingModalShop.id || blk.shopName === bookingModalShop.name) &&
+            blk.date === bookingDate
+        )
+      : [];
+    const isFullDayBlocked = shopBlocksOnDate.some((blk) => blk.type === 'full');
+    const blockedTimeList = shopBlocksOnDate.filter((blk) => blk.type === 'slot').map((blk) => blk.timeSlot);
 
     const todayStr = new Date().toISOString().split('T')[0];
 
@@ -884,6 +1043,8 @@ export default function App() {
             '깔끔 클리핑 (3mm/6mm)',
             '위생·목욕 중심 (최소 컷)',
           ];
+
+    const isAnyModalOpen = Boolean(bookingModalShop || reviewModalBooking);
 
     return (
       <div className="min-h-screen bg-gray-50 pb-24">
@@ -1039,12 +1200,13 @@ export default function App() {
                     onLocateMe={() => detectMyLocation(true)}
                     onSelectShop={(shop) => setSelectedMapShop(shop)}
                     selectedShop={selectedMapShop}
+                    isOverlayOpen={isAnyModalOpen}
                   />
 
                   {selectedMapShop ? (
                     <div className="bg-white p-4 rounded-2xl shadow-lg border-2 border-orange-400 flex justify-between items-center transition">
                       <div className="pr-2 space-y-1">
-                        <div className="flex items-center space-x-1.5 flex-wrap">
+                        <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                           <span
                             className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                               getPetTypeBadge(selectedMapShop.petType).bg
@@ -1052,8 +1214,8 @@ export default function App() {
                           >
                             {getPetTypeBadge(selectedMapShop.petType).label}
                           </span>
-                          <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                            {selectedMapShop.region} {selectedMapShop.district}
+                          <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-extrabold">
+                            ⭐ {selectedMapShop.avgRating} ({selectedMapShop.totalReviews})
                           </span>
                           {selectedMapShop.distanceKm && (
                             <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
@@ -1107,8 +1269,8 @@ export default function App() {
                               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${badge.bg}`}>
                                 {badge.label}
                               </span>
-                              <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                                {shop.region} {shop.district}
+                              <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-extrabold">
+                                ⭐ {shop.avgRating} ({shop.totalReviews})
                               </span>
                               {shop.distanceKm && (
                                 <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold">
@@ -1117,7 +1279,9 @@ export default function App() {
                               )}
                             </div>
                             <h4 className="font-extrabold text-gray-900 text-sm">{shop.name}</h4>
-                            <p className="text-xs text-gray-500 font-medium">{shop.desc}</p>
+                            <p className="text-xs text-gray-500 font-medium">
+                              {shop.region} {shop.district} · {shop.desc}
+                            </p>
                             <p className="text-xs font-bold text-orange-600">{shop.price || '50,000원~'}</p>
                           </div>
                           <button
@@ -1140,7 +1304,7 @@ export default function App() {
 
           {userTab === 'bookings' && (
             <div className="space-y-3">
-              <h3 className="font-extrabold text-gray-800 text-sm">📋 내 예약 신청 내역</h3>
+              <h3 className="font-extrabold text-gray-800 text-sm">📋 내 예약 & 미용 케어 일지</h3>
               {myBookings.length === 0 ? (
                 <div className="bg-white p-8 rounded-3xl text-center shadow-sm border border-gray-100">
                   <p className="text-2xl mb-2">🗓️</p>
@@ -1156,7 +1320,9 @@ export default function App() {
                       <h4 className="font-extrabold text-gray-900 text-sm">{b.shop}</h4>
                       <span
                         className={`text-xs font-bold px-3 py-1 rounded-full ${
-                          b.status === '승인됨'
+                          b.status === '미용 완료'
+                            ? 'bg-blue-100 text-blue-700'
+                            : b.status === '승인됨'
                             ? 'bg-emerald-100 text-emerald-700'
                             : b.status === '거절됨'
                             ? 'bg-rose-100 text-rose-700'
@@ -1166,6 +1332,7 @@ export default function App() {
                         {b.status}
                       </span>
                     </div>
+
                     <div className="text-xs space-y-1 text-gray-600 font-medium bg-gray-50 p-3 rounded-xl">
                       <p>🐾 대상: <span className="font-bold text-gray-800">{b.pet}</span></p>
                       <p>🗓️ 예약 일시 (1시간30분 코스): <span className="font-bold text-gray-800">{b.time}</span></p>
@@ -1173,10 +1340,45 @@ export default function App() {
                       {b.styleDetail && (
                         <p>✨ 미용 방식: <span className="font-bold text-orange-600">{b.styleDetail}</span></p>
                       )}
-                      {b.requestNote && b.requestNote !== '없음' && (
-                        <p>💬 요청사항: <span className="text-gray-700">{b.requestNote}</span></p>
-                      )}
                     </div>
+
+                    {/* 그루머 케어 일지 카드 */}
+                    {b.careReport && (
+                      <div className="bg-blue-50/80 border border-blue-200 p-3.5 rounded-2xl space-y-1">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[11px] font-black text-blue-800">✂️ 사장님 미용 케어 일지</span>
+                          <span className="text-[10px] text-blue-500 font-bold">{b.careReport.completedAt}</span>
+                        </div>
+                        <p className="text-xs font-bold text-blue-900">컨디션: {b.careReport.condition}</p>
+                        <p className="text-xs text-blue-800 leading-relaxed">{b.careReport.note}</p>
+                      </div>
+                    )}
+
+                    {/* 미용 완료 시 리뷰 작성 또는 내가 남긴 별점 표시 */}
+                    {b.status === '미용 완료' && (
+                      <div className="pt-1">
+                        {b.reviewed ? (
+                          <div className="bg-amber-50 border border-amber-200 px-3.5 py-2.5 rounded-xl text-xs">
+                            <p className="font-extrabold text-amber-700">
+                              내가 남긴 후기: {'⭐'.repeat(b.reviewRating || 5)} ({b.reviewRating}점)
+                            </p>
+                            <p className="text-gray-700 mt-0.5">{b.reviewComment}</p>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setReviewModalBooking(b);
+                              setReviewRating(5);
+                              setReviewText('');
+                            }}
+                            className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold py-2.5 rounded-xl shadow-sm transition"
+                          >
+                            ⭐ 별점 리뷰 작성하기
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {b.status === '대기 중' && (
                       <div className="pt-1 text-right">
                         <button
@@ -1291,9 +1493,9 @@ export default function App() {
           )}
         </main>
 
-        {/* 제휴 업체별 날짜 · 1시간30분 단위 시간 슬롯 · 미용 방식 상세 선택 모달 */}
+        {/* [모달 1] 제휴 업체별 날짜 · 1시간30분 단위 시간 슬롯 · 미용 방식 상세 선택 모달 (최상단 z-[9999]) */}
         {bookingModalShop && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
               <div className="flex justify-between items-start border-b border-gray-100 pb-3">
                 <div>
@@ -1305,8 +1507,8 @@ export default function App() {
                     >
                       {getPetTypeBadge(bookingModalShop.petType).label}
                     </span>
-                    <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-bold">
-                      {bookingModalShop.region} {bookingModalShop.district}
+                    <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-extrabold">
+                      ⭐ {bookingModalShop.avgRating} ({bookingModalShop.totalReviews})
                     </span>
                   </div>
                   <h3 className="font-black text-gray-900 text-base mt-1">{bookingModalShop.name}</h3>
@@ -1319,6 +1521,17 @@ export default function App() {
                   ✕
                 </button>
               </div>
+
+              {/* 최근 보호자 후기 미리보기 */}
+              {bookingModalShop.shopReviews && bookingModalShop.shopReviews.length > 0 && (
+                <div className="bg-amber-50/70 border border-amber-200/70 p-3 rounded-2xl space-y-1">
+                  <p className="text-[11px] font-extrabold text-amber-800">💬 최근 방문 보호자 후기</p>
+                  <p className="text-xs text-gray-700">
+                    "{bookingModalShop.shopReviews[0].comment}" —{' '}
+                    <span className="font-bold">{bookingModalShop.shopReviews[0].customerName}님</span>
+                  </p>
+                </div>
+              )}
 
               <form onSubmit={handleConfirmBooking} className="space-y-4">
                 <div>
@@ -1380,39 +1593,48 @@ export default function App() {
                   />
                 </div>
 
-                {/* 1시간 30분 단위 타임슬롯 선택 버튼 */}
+                {/* 1시간 30분 단위 타임슬롯 선택 버튼 (예약 마감 + 사장님 일정 차단 반영) */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="block text-xs font-extrabold text-gray-700">
                       2️⃣ 1시간 30분 단위 시간 선택
                     </label>
                     <span className="text-[10px] text-gray-400 font-semibold">
-                      회색은 예약 마감
+                      회색은 마감/휴무 시간
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {modalTimeSlots.map((slot) => {
-                      const isBooked = bookedTimesForShopAndDate.includes(slot);
-                      const isSelected = bookingTime === slot;
-                      return (
-                        <button
-                          key={slot}
-                          type="button"
-                          disabled={isBooked}
-                          onClick={() => setBookingTime(slot)}
-                          className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
-                            isBooked
-                              ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed line-through'
-                              : isSelected
-                              ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
-                              : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300'
-                          }`}
-                        >
-                          {slot} {isBooked ? '(마감)' : ''}
-                        </button>
-                      );
-                    })}
-                  </div>
+
+                  {isFullDayBlocked ? (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold p-3.5 rounded-2xl text-center">
+                      ⛔ 선택하신 날짜({bookingDate})는 매장 휴무 및 일정 차단으로 예약이 불가합니다.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-2">
+                      {modalTimeSlots.map((slot) => {
+                        const isBooked = bookedTimesForShopAndDate.includes(slot);
+                        const isBlocked = blockedTimeList.includes(slot);
+                        const unavailable = isBooked || isBlocked;
+                        const isSelected = bookingTime === slot;
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            disabled={unavailable}
+                            onClick={() => setBookingTime(slot)}
+                            className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                              unavailable
+                                ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed line-through'
+                                : isSelected
+                                ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                                : 'bg-white text-gray-700 border-gray-200 hover:border-orange-300'
+                            }`}
+                          >
+                            {slot} {isBlocked ? '(휴게)' : isBooked ? '(마감)' : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1490,13 +1712,77 @@ export default function App() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-2xl text-xs font-bold shadow-md shadow-orange-500/20 transition"
+                    disabled={isFullDayBlocked}
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white py-3 rounded-2xl text-xs font-bold shadow-md shadow-orange-500/20 transition"
                   >
                     예약 신청 확정
                   </button>
                 </div>
               </form>
             </div>
+          </div>
+        )}
+
+        {/* [모달 2] 보호자 별점 후기 작성 모달 */}
+        {reviewModalBooking && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+            <form
+              onSubmit={handleSubmitReview}
+              className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl"
+            >
+              <div>
+                <h3 className="font-black text-gray-900 text-base">⭐ 미용 후기 남기기</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{reviewModalBooking.shop}</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1.5">별점 선택</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setReviewRating(num)}
+                      className={`py-2.5 rounded-xl text-xs font-black border transition ${
+                        reviewRating === num
+                          ? 'bg-amber-500 text-white border-amber-500'
+                          : 'bg-gray-50 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      ⭐ {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">후기 내용</label>
+                <textarea
+                  rows="3"
+                  placeholder="아이 케어 만족도, 스타일링 후기를 남겨주세요."
+                  value={reviewText}
+                  onChange={(e) => setReviewText(e.target.value)}
+                  required
+                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-3.5 text-xs focus:bg-white focus:outline-none resize-none"
+                />
+              </div>
+
+              <div className="flex space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setReviewModalBooking(null)}
+                  className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl text-xs font-bold"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-amber-500 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
+                >
+                  후기 등록
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </div>
@@ -1507,6 +1793,16 @@ export default function App() {
   const displayedBookings = onlyMyShopBookings
     ? bookings.filter((b) => b.shopId === user.uid || b.shop === userProfile.extraInfo)
     : bookings;
+
+  const myBlockedList = blockedSlots.filter((blk) => blk.shopId === user.uid);
+  const myShopReviews = reviews.filter(
+    (r) => r.shopId === user.uid || r.shopName === userProfile.extraInfo
+  );
+
+  const parsedOwnerSlots = shopTimeSlotsInput
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   return (
     <div className="min-h-screen bg-slate-900 pb-20 text-slate-100">
@@ -1529,7 +1825,7 @@ export default function App() {
       </header>
 
       <div className="bg-slate-950 border-b border-slate-800 sticky top-[57px] z-10 shadow-sm">
-        <div className="max-w-md mx-auto grid grid-cols-2 text-center text-xs font-bold">
+        <div className="max-w-md mx-auto grid grid-cols-3 text-center text-xs font-bold">
           <button
             onClick={() => setOwnerTab('bookings')}
             className={`py-3.5 border-b-2 transition ${
@@ -1538,7 +1834,17 @@ export default function App() {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            📅 예약 관리
+            📅 예약·케어일지
+          </button>
+          <button
+            onClick={() => setOwnerTab('schedule')}
+            className={`py-3.5 border-b-2 transition ${
+              ownerTab === 'schedule'
+                ? 'border-orange-500 text-orange-400 bg-slate-900/50'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            ⛔ 일정 차단 ({myBlockedList.length})
           </button>
           <button
             onClick={() => setOwnerTab('shop')}
@@ -1548,23 +1854,29 @@ export default function App() {
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            🏪 매장명·정보 변경
+            🏪 매장·후기
           </button>
         </div>
       </div>
 
       <main className="max-w-md mx-auto p-4 space-y-5">
-        {ownerTab === 'bookings' ? (
+        {ownerTab === 'bookings' && (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700/60 shadow-sm">
-                <p className="text-xs text-slate-400 font-medium">전체 접수 예약</p>
-                <p className="text-2xl font-black text-white mt-1">{displayedBookings.length}건</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/60">
+                <p className="text-[11px] text-slate-400 font-medium">전체 예약</p>
+                <p className="text-xl font-black text-white mt-0.5">{displayedBookings.length}건</p>
               </div>
-              <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700/60 shadow-sm">
-                <p className="text-xs text-slate-400 font-medium">승인 완료</p>
-                <p className="text-2xl font-black text-emerald-400 mt-1">
+              <div className="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/60">
+                <p className="text-[11px] text-slate-400 font-medium">승인 진행중</p>
+                <p className="text-xl font-black text-emerald-400 mt-0.5">
                   {displayedBookings.filter((b) => b.status === '승인됨').length}건
+                </p>
+              </div>
+              <div className="bg-slate-800 p-3.5 rounded-2xl border border-slate-700/60">
+                <p className="text-[11px] text-slate-400 font-medium">미용 완료</p>
+                <p className="text-xl font-black text-blue-400 mt-0.5">
+                  {displayedBookings.filter((b) => b.status === '미용 완료').length}건
                 </p>
               </div>
             </div>
@@ -1597,7 +1909,9 @@ export default function App() {
                     <div className="flex justify-between items-center">
                       <span
                         className={`text-xs font-bold px-3 py-1 rounded-full ${
-                          item.status === '승인됨'
+                          item.status === '미용 완료'
+                            ? 'bg-blue-900/60 text-blue-300 border border-blue-700/50'
+                            : item.status === '승인됨'
                             ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50'
                             : item.status === '거절됨'
                             ? 'bg-rose-900/60 text-rose-300 border border-rose-700/50'
@@ -1622,196 +1936,440 @@ export default function App() {
                       {item.requestNote && item.requestNote !== '없음' && (
                         <p className="text-slate-400">💬 보호자 요청: {item.requestNote}</p>
                       )}
-                      <p className="text-[11px] text-slate-500 pt-1">요청 샵: {item.shop}</p>
                     </div>
 
-                    <div className="flex space-x-2 pt-1">
+                    {item.status === '대기 중' && (
+                      <div className="flex space-x-2 pt-1">
+                        <button
+                          onClick={() => updateStatus(item.id, '승인됨')}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2.5 rounded-xl font-bold transition shadow-sm"
+                        >
+                          예약 승인
+                        </button>
+                        <button
+                          onClick={() => updateStatus(item.id, '거절됨')}
+                          className="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs py-2.5 rounded-xl font-bold transition shadow-sm"
+                        >
+                          거절
+                        </button>
+                      </div>
+                    )}
+
+                    {item.status === '승인됨' && (
                       <button
-                        onClick={() => updateStatus(item.id, '승인됨')}
-                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs py-2.5 rounded-xl font-bold transition shadow-sm"
+                        onClick={() => {
+                          setCareModalBooking(item);
+                          setCareCondition('컨디션 좋음 · 협조적');
+                          setCareNoteInput('');
+                        }}
+                        className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-extrabold transition shadow-sm"
                       >
-                        예약 승인
+                        ✨ 미용 완료 처리 & 보호자 케어 일지 작성
                       </button>
-                      <button
-                        onClick={() => updateStatus(item.id, '거절됨')}
-                        className="flex-1 bg-rose-600 hover:bg-rose-500 text-white text-xs py-2.5 rounded-xl font-bold transition shadow-sm"
-                      >
-                        거절
-                      </button>
-                    </div>
+                    )}
+
+                    {item.careReport && (
+                      <div className="bg-slate-900 border border-blue-800/60 p-3 rounded-xl text-xs space-y-1">
+                        <p className="text-blue-400 font-bold">📝 발송된 케어 일지 ({item.careReport.condition})</p>
+                        <p className="text-slate-300">{item.careReport.note}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </>
-        ) : (
-          <form onSubmit={handleRegisterShop} className="bg-slate-800 p-6 rounded-3xl border border-slate-700/60 space-y-4 shadow-sm">
-            <div>
-              <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요.
-              </p>
-            </div>
+        )}
 
-            <div className="grid grid-cols-2 gap-3">
+        {/* 사장님 탭 2: 일정 차단(휴무/브레이크타임) 관리 */}
+        {ownerTab === 'schedule' && (
+          <div className="space-y-4">
+            <form
+              onSubmit={handleAddBlockedSlot}
+              className="bg-slate-800 p-6 rounded-3xl border border-slate-700/60 space-y-4"
+            >
               <div>
-                <label className="block text-xs font-bold text-orange-400 mb-1">매장명</label>
+                <h3 className="font-black text-white text-base">⛔ 휴무일 & 특정 시간 차단</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  점심시간, 개인 일정, 정기 휴무일을 차단하면 보호자 앱에서 해당 시간이 즉시 마감 처리됩니다.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">차단할 날짜 선택</label>
                 <input
-                  type="text"
-                  value={shopNameInput}
-                  onChange={(e) => setShopNameInput(e.target.value)}
+                  type="date"
+                  value={blockDate}
+                  onChange={(e) => setBlockDate(e.target.value)}
                   required
-                  className="w-full bg-slate-900 border border-orange-500/50 rounded-2xl px-3.5 py-3 text-sm text-white font-bold focus:outline-none"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">사장님 성함</label>
-                <input
-                  type="text"
-                  value={ownerNameInput}
-                  onChange={(e) => setOwnerNameInput(e.target.value)}
-                  required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:outline-none"
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">취급 미용 대상 선택</label>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'dog', label: '🐶 강아지 전용' },
-                  { id: 'cat', label: '🐱 고양이 전용' },
-                  { id: 'both', label: '🐶🐱 멍냥 모두' },
-                ].map((opt) => (
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">차단 범위 선택</label>
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    key={opt.id}
                     type="button"
-                    onClick={() => setShopPetType(opt.id)}
+                    onClick={() => setBlockType('slot')}
                     className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
-                      shopPetType === opt.id
+                      blockType === 'slot'
                         ? 'bg-orange-500 text-white border-orange-500'
                         : 'bg-slate-900 text-slate-400 border-slate-700'
                     }`}
                   >
-                    {opt.label}
+                    ⏰ 특정 1시간30분 타임만
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBlockType('full')}
+                    className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                      blockType === 'full'
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-slate-900 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    🗓️ 하루 전체 (휴무일)
+                  </button>
+                </div>
+              </div>
+
+              {blockType === 'slot' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5">차단할 타임슬롯 선택</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {parsedOwnerSlots.map((slot) => (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => setBlockTimeSlot(slot)}
+                        className={`py-2 rounded-xl text-xs font-bold border transition ${
+                          blockTimeSlot === slot
+                            ? 'bg-orange-500 text-white border-orange-500'
+                            : 'bg-slate-900 text-slate-300 border-slate-700'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">사유 메모 (관리용)</label>
+                <input
+                  type="text"
+                  placeholder="예: 점심시간 브레이크타임 / 세미나 참석"
+                  value={blockReason}
+                  onChange={(e) => setBlockReason(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-md"
+              >
+                일정 차단 등록하기
+              </button>
+            </form>
+
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-extrabold text-slate-400 uppercase px-1">
+                현재 적용 중인 차단 일정 ({myBlockedList.length}건)
+              </h4>
+              {myBlockedList.length === 0 ? (
+                <div className="bg-slate-800 p-6 rounded-2xl text-center text-xs text-slate-400 border border-slate-700/60">
+                  등록된 휴무나 차단된 시간대가 없습니다.
+                </div>
+              ) : (
+                myBlockedList.map((blk) => (
+                  <div
+                    key={blk.id}
+                    className="bg-slate-800 p-4 rounded-2xl border border-slate-700/60 flex justify-between items-center"
+                  >
+                    <div>
+                      <span className="text-xs font-black text-rose-400">
+                        {blk.date} · {blk.type === 'full' ? '하루 전체 휴무' : `${blk.timeSlot} 타임 마감`}
+                      </span>
+                      <p className="text-xs text-slate-300 mt-0.5">{blk.reason}</p>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveBlockedSlot(blk.id)}
+                      className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-xl font-bold"
+                    >
+                      해제
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 사장님 탭 3: 매장 정보 수정 & 보호자 후기 확인 */}
+        {ownerTab === 'shop' && (
+          <div className="space-y-5">
+            <form
+              onSubmit={handleRegisterShop}
+              className="bg-slate-800 p-6 rounded-3xl border border-slate-700/60 space-y-4 shadow-sm"
+            >
+              <div>
+                <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-orange-400 mb-1">매장명</label>
+                  <input
+                    type="text"
+                    value={shopNameInput}
+                    onChange={(e) => setShopNameInput(e.target.value)}
+                    required
+                    className="w-full bg-slate-900 border border-orange-500/50 rounded-2xl px-3.5 py-3 text-sm text-white font-bold focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">사장님 성함</label>
+                  <input
+                    type="text"
+                    value={ownerNameInput}
+                    onChange={(e) => setOwnerNameInput(e.target.value)}
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">취급 미용 대상 선택</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'dog', label: '🐶 강아지 전용' },
+                    { id: 'cat', label: '🐱 고양이 전용' },
+                    { id: 'both', label: '🐶🐱 멍냥 모두' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setShopPetType(opt.id)}
+                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                        shopPetType === opt.id
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'bg-slate-900 text-slate-400 border-slate-700'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">시/도</label>
+                  <select
+                    value={shopRegion}
+                    onChange={(e) => setShopRegion(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:outline-none"
+                  >
+                    <option value="서울">서울</option>
+                    <option value="인천">인천</option>
+                    <option value="경기">경기</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-300 mb-1">구/동네</label>
+                  <input
+                    type="text"
+                    placeholder="예: 남동구 구월동"
+                    value={shopDistrict}
+                    onChange={(e) => setShopDistrict(e.target.value)}
+                    required
+                    className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">매장 한 줄 소개</label>
+                <input
+                  type="text"
+                  placeholder="예: 1시간30분 타임 집중 프리미엄 케어"
+                  value={shopDesc}
+                  onChange={(e) => setShopDesc(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1">
+                  1시간30분 단위 타임슬롯 (쉼표로 구분)
+                </label>
+                <input
+                  type="text"
+                  value={shopTimeSlotsInput}
+                  onChange={(e) => setShopTimeSlotsInput(e.target.value)}
+                  required
+                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <label className="block text-xs font-bold text-orange-400">✂️ 1시간 30분 대표 코스 3종</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={shopSvc1Name}
+                    onChange={(e) => setShopSvc1Name(e.target.value)}
+                    placeholder="메뉴 1"
+                    className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={shopSvc1Price}
+                    onChange={(e) => setShopSvc1Price(e.target.value)}
+                    placeholder="가격"
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={shopSvc2Name}
+                    onChange={(e) => setShopSvc2Name(e.target.value)}
+                    placeholder="메뉴 2"
+                    className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={shopSvc2Price}
+                    onChange={(e) => setShopSvc2Price(e.target.value)}
+                    placeholder="가격"
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    value={shopSvc3Name}
+                    onChange={(e) => setShopSvc3Name(e.target.value)}
+                    placeholder="메뉴 3"
+                    className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                  <input
+                    type="text"
+                    value={shopSvc3Price}
+                    onChange={(e) => setShopSvc3Price(e.target.value)}
+                    placeholder="가격"
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
+              >
+                타임슬롯 및 정보 저장하기
+              </button>
+            </form>
+
+            {/* 우리 매장 보호자 후기 모아보기 */}
+            <div className="bg-slate-800 p-5 rounded-3xl border border-slate-700/60 space-y-3">
+              <h4 className="font-black text-white text-sm">⭐ 우리 매장 보호자 후기 ({myShopReviews.length}건)</h4>
+              {myShopReviews.length === 0 ? (
+                <p className="text-xs text-slate-400">아직 등록된 보호자 후기가 없습니다.</p>
+              ) : (
+                myShopReviews.map((rev) => (
+                  <div key={rev.id} className="bg-slate-900 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="font-bold text-amber-400">{'⭐'.repeat(rev.rating)} ({rev.rating}점)</span>
+                      <span className="text-slate-400">{rev.customerName} 보호자님</span>
+                    </div>
+                    <p className="text-slate-200">{rev.comment}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* 사장님 미용 완료 케어 일지 작성 모달 */}
+      {careModalBooking && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
+          <form
+            onSubmit={handleCompleteWithCareNote}
+            className="bg-slate-800 border border-slate-700 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-white"
+          >
+            <div>
+              <h3 className="font-black text-base">✨ 미용 완료 & 케어 일지 작성</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {careModalBooking.customer} 보호자님 ({careModalBooking.pet})
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1.5">아이 미용 컨디션</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  '컨디션 좋음 · 협조적',
+                  '약간 긴장했으나 무사 완료',
+                  '털 엉킴 심함 · 보습 케어',
+                  '예민함 · 다음엔 부분미용 추천',
+                ].map((cond) => (
+                  <button
+                    key={cond}
+                    type="button"
+                    onClick={() => setCareCondition(cond)}
+                    className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border text-left transition ${
+                      careCondition === cond
+                        ? 'bg-blue-600 text-white border-blue-500'
+                        : 'bg-slate-900 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    {cond}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">시/도</label>
-                <select
-                  value={shopRegion}
-                  onChange={(e) => setShopRegion(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-3.5 py-3 text-sm text-white focus:outline-none"
-                >
-                  <option value="서울">서울</option>
-                  <option value="인천">인천</option>
-                  <option value="경기">경기</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1">구/동네</label>
-                <input
-                  type="text"
-                  placeholder="예: 남동구 구월동"
-                  value={shopDistrict}
-                  onChange={(e) => setShopDistrict(e.target.value)}
-                  required
-                  className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">매장 한 줄 소개</label>
-              <input
-                type="text"
-                placeholder="예: 1시간30분 타임 집중 프리미엄 케어"
-                value={shopDesc}
-                onChange={(e) => setShopDesc(e.target.value)}
+              <label className="block text-xs font-bold text-slate-300 mb-1">보호자 전달 코멘트</label>
+              <textarea
+                rows="3"
+                placeholder="예: 귀 세정과 발톱 정리도 깔끔하게 마쳤고, 드라이할 때도 아주 얌전했어요!"
+                value={careNoteInput}
+                onChange={(e) => setCareNoteInput(e.target.value)}
                 required
-                className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
+                className="w-full bg-slate-900 border border-slate-700 rounded-2xl p-3.5 text-xs text-white focus:outline-none resize-none"
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1">
-                1시간30분 단위 타임슬롯 (쉼표로 구분)
-              </label>
-              <input
-                type="text"
-                value={shopTimeSlotsInput}
-                onChange={(e) => setShopTimeSlotsInput(e.target.value)}
-                required
-                className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none"
-              />
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={() => setCareModalBooking(null)}
+                className="flex-1 bg-slate-700 text-slate-300 py-3 rounded-xl text-xs font-bold"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
+              >
+                완료 및 일지 발송
+              </button>
             </div>
-
-            <div className="space-y-2 pt-1">
-              <label className="block text-xs font-bold text-orange-400">✂️ 1시간 30분 대표 코스 3종</label>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={shopSvc1Name}
-                  onChange={(e) => setShopSvc1Name(e.target.value)}
-                  placeholder="메뉴 1"
-                  className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-                <input
-                  type="text"
-                  value={shopSvc1Price}
-                  onChange={(e) => setShopSvc1Price(e.target.value)}
-                  placeholder="가격"
-                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={shopSvc2Name}
-                  onChange={(e) => setShopSvc2Name(e.target.value)}
-                  placeholder="메뉴 2"
-                  className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-                <input
-                  type="text"
-                  value={shopSvc2Price}
-                  onChange={(e) => setShopSvc2Price(e.target.value)}
-                  placeholder="가격"
-                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  value={shopSvc3Name}
-                  onChange={(e) => setShopSvc3Name(e.target.value)}
-                  placeholder="메뉴 3"
-                  className="col-span-2 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-                <input
-                  type="text"
-                  value={shopSvc3Price}
-                  onChange={(e) => setShopSvc3Price(e.target.value)}
-                  placeholder="가격"
-                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
-            >
-              타임슬롯 및 정보 저장하기
-            </button>
           </form>
-        )}
-      </main>
+        </div>
+      )}
     </div>
   );
 }

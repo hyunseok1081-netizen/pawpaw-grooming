@@ -152,7 +152,7 @@ function getPetTypeBadge(petType) {
   return { label: '🐶 강아지 전문', bg: 'bg-amber-100 text-amber-800', icon: '🐶', color: '#f97316' };
 }
 
-// 인터랙티브 지도 컴포넌트 (모달 활성화 시 레이어 충돌 방지 처리)
+// 인터랙티브 지도 컴포넌트
 function GroomingMap({ shops, myLocation, onLocateMe, onSelectShop, selectedShop, isOverlayOpen }) {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -310,7 +310,7 @@ export default function App() {
   const [signUpPetSpecies, setSignUpPetSpecies] = useState('dog');
   const [extraInfo, setExtraInfo] = useState('');
 
-  // 실시간 DB 데이터 (예약, 매장, 일정차단, 리뷰)
+  // 실시간 DB 데이터
   const [bookings, setBookings] = useState([]);
   const [dbShops, setDbShops] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
@@ -326,8 +326,18 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState('');
   const [selectedMapShop, setSelectedMapShop] = useState(null);
 
+  // 보호자 다둥이 반려동물 목록 상태
+  const [petsList, setPetsList] = useState([]);
+  const [editingPetId, setEditingPetId] = useState(null);
+  const [petSpecies, setPetSpecies] = useState('dog');
+  const [petName, setPetName] = useState('');
+  const [petBreed, setPetBreed] = useState('');
+  const [petWeight, setPetWeight] = useState('');
+  const [petNote, setPetNote] = useState('');
+
   // 보호자 상세 예약 모달 상태
   const [bookingModalShop, setBookingModalShop] = useState(null);
+  const [selectedBookingPetId, setSelectedBookingPetId] = useState('');
   const [bookingPetSpecies, setBookingPetSpecies] = useState('dog');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
@@ -340,15 +350,8 @@ export default function App() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
 
-  // 보호자 반려동물 상세 정보 상태
-  const [petSpecies, setPetSpecies] = useState('dog');
-  const [petName, setPetName] = useState('');
-  const [petBreed, setPetBreed] = useState('');
-  const [petWeight, setPetWeight] = useState('');
-  const [petNote, setPetNote] = useState('');
-
   // 사장님 화면 탭 & 매장/사장님 정보 수정 상태
-  const [ownerTab, setOwnerTab] = useState('bookings'); // 'bookings' | 'schedule' | 'shop'
+  const [ownerTab, setOwnerTab] = useState('bookings');
   const [ownerNameInput, setOwnerNameInput] = useState('');
   const [shopNameInput, setShopNameInput] = useState('');
   const [shopPetType, setShopPetType] = useState('both');
@@ -367,7 +370,7 @@ export default function App() {
 
   // 사장님 일정 차단(휴무/브레이크타임) 상태
   const [blockDate, setBlockDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [blockType, setBlockType] = useState('slot'); // 'full' | 'slot'
+  const [blockType, setBlockType] = useState('slot');
   const [blockTimeSlot, setBlockTimeSlot] = useState('13:00');
   const [blockReason, setBlockReason] = useState('점심시간 / 휴게');
 
@@ -410,14 +413,36 @@ export default function App() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           setUserProfile(data);
-          const loadedSpecies = data.petDetail?.petSpecies || 'dog';
-          setPetSpecies(loadedSpecies);
-          setPetName(data.petDetail?.petName || data.extraInfo || '');
-          setPetBreed(data.petDetail?.petBreed || '');
-          setPetWeight(data.petDetail?.petWeight || '');
-          setPetNote(data.petDetail?.petNote || '');
 
           if (data.role === 'user') {
+            // 기존 단일 petDetail이 있거나 pets 배열이 있는 경우 모두 통합 로드
+            let loadedPets = [];
+            if (Array.isArray(data.pets) && data.pets.length > 0) {
+              loadedPets = data.pets;
+            } else if (data.petDetail && data.petDetail.petName) {
+              loadedPets = [
+                {
+                  id: 'pet-initial',
+                  petSpecies: data.petDetail.petSpecies || 'dog',
+                  petName: data.petDetail.petName,
+                  petBreed: data.petDetail.petBreed || '',
+                  petWeight: data.petDetail.petWeight || '',
+                  petNote: data.petDetail.petNote || '',
+                },
+              ];
+            } else if (data.extraInfo) {
+              loadedPets = [
+                {
+                  id: 'pet-initial',
+                  petSpecies: 'dog',
+                  petName: data.extraInfo.replace(/^[🐶🐱]\s*/, ''),
+                  petBreed: '',
+                  petWeight: '',
+                  petNote: '',
+                },
+              ];
+            }
+            setPetsList(loadedPets);
             detectMyLocation(false);
           } else if (data.role === 'owner') {
             setOwnerNameInput(data.name || '');
@@ -448,6 +473,7 @@ export default function App() {
       } else {
         setUser(null);
         setUserProfile(null);
+        setPetsList([]);
       }
       setLoading(false);
     });
@@ -491,23 +517,32 @@ export default function App() {
       if (isSignUp) {
         const res = await createUserWithEmailAndPassword(auth, email, password);
         const defaultLabel = signUpPetSpecies === 'cat' ? '반려묘' : '반려견';
+        const firstPet =
+          role === 'user'
+            ? [
+                {
+                  id: `pet-${Date.now()}`,
+                  petSpecies: signUpPetSpecies,
+                  petName: extraInfo || defaultLabel,
+                  petBreed: '',
+                  petWeight: '',
+                  petNote: '',
+                },
+              ]
+            : [];
         const profileData = {
           uid: res.user.uid,
           email,
           name: name || '사용자',
           role,
           extraInfo: extraInfo || (role === 'user' ? defaultLabel : '포포 제휴 미용실'),
-          petDetail:
-            role === 'user'
-              ? { petSpecies: signUpPetSpecies, petName: extraInfo, petBreed: '', petWeight: '', petNote: '' }
-              : null,
+          pets: firstPet,
           createdAt: serverTimestamp(),
         };
         await setDoc(doc(db, 'users', res.user.uid), profileData);
         setUserProfile(profileData);
         if (role === 'user') {
-          setPetSpecies(signUpPetSpecies);
-          setPetName(extraInfo);
+          setPetsList(firstPet);
           detectMyLocation(false);
         } else {
           setOwnerNameInput(name || '사장님');
@@ -526,16 +561,25 @@ export default function App() {
     await signOut(auth);
   };
 
+  // 예약 모달 열기 (등록된 다둥이 중 매장 취급 축종에 맞는 아이 자동 선택)
   const openShopBookingModal = (shop) => {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
-    const slots =
-      shop.timeSlots && shop.timeSlots.length > 0
-        ? shop.timeSlots
-        : ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30'];
 
-    const initialSpecies = shop.petType === 'cat' ? 'cat' : shop.petType === 'dog' ? 'dog' : petSpecies || 'dog';
+    const compatiblePets = petsList.filter((p) => {
+      if (shop.petType === 'cat') return p.petSpecies === 'cat';
+      if (shop.petType === 'dog') return p.petSpecies === 'dog';
+      return true;
+    });
+
+    const chosenPet = compatiblePets[0] || petsList[0] || null;
+    const initialSpecies = chosenPet
+      ? chosenPet.petSpecies
+      : shop.petType === 'cat'
+      ? 'cat'
+      : 'dog';
 
     setBookingModalShop(shop);
+    setSelectedBookingPetId(chosenPet ? chosenPet.id : 'manual');
     setBookingPetSpecies(initialSpecies);
     setBookingDate(tomorrow);
     setBookingTime('');
@@ -544,6 +588,15 @@ export default function App() {
       initialSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
     );
     setBookingNote('');
+  };
+
+  // 예약 모달 내에서 다둥이 중 다른 아이 클릭 시 전환
+  const handleSelectPetForBooking = (pet) => {
+    setSelectedBookingPetId(pet.id);
+    setBookingPetSpecies(pet.petSpecies);
+    setCustomStyleDetail(
+      pet.petSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
+    );
   };
 
   const handleConfirmBooking = async (e) => {
@@ -563,11 +616,21 @@ export default function App() {
         : [{ name: '전체 미용 기본 (1시간30분 소요)', price: bookingModalShop.price || '50,000원', duration: '1시간 30분' }];
 
     const chosenService = shopServices[selectedServiceIdx] || shopServices[0];
-    const speciesTag = bookingPetSpecies === 'cat' ? '🐱 고양이' : '🐶 강아지';
+    const selectedPetObj = petsList.find((p) => p.id === selectedBookingPetId);
+    const activeSpecies = selectedPetObj ? selectedPetObj.petSpecies : bookingPetSpecies;
+    const speciesTag = activeSpecies === 'cat' ? '🐱 고양이' : '🐶 강아지';
 
-    const petSummary = petBreed
-      ? `[${speciesTag}] ${petName} (${petBreed}${petWeight ? `, ${petWeight}kg` : ''})`
-      : `[${speciesTag}] ${petName || userProfile?.extraInfo || '반려동물'}`;
+    const petSummary = selectedPetObj
+      ? `[${speciesTag}] ${selectedPetObj.petName}${
+          selectedPetObj.petBreed
+            ? ` (${selectedPetObj.petBreed}${selectedPetObj.petWeight ? `, ${selectedPetObj.petWeight}kg` : ''})`
+            : selectedPetObj.petWeight
+            ? ` (${selectedPetObj.petWeight}kg)`
+            : ''
+        }`
+      : `[${speciesTag}] ${userProfile?.extraInfo || '반려동물'}`;
+
+    const finalPetNote = selectedPetObj?.petNote || '특이사항 없음';
 
     try {
       await addDoc(collection(db, 'bookings'), {
@@ -576,9 +639,10 @@ export default function App() {
         shopRegion: `${bookingModalShop.region} ${bookingModalShop.district || ''}`.trim(),
         customerId: user.uid,
         customer: userProfile?.name || '보호자',
-        petSpecies: bookingPetSpecies,
+        petId: selectedPetObj?.id || '',
+        petSpecies: activeSpecies,
         pet: petSummary,
-        petNote: petNote || '특이사항 없음',
+        petNote: finalPetNote,
         service: `${chosenService.name} (${chosenService.price})`,
         styleDetail: customStyleDetail,
         requestNote: bookingNote || '없음',
@@ -636,24 +700,100 @@ export default function App() {
     }
   };
 
-  const handleSavePetDetail = async (e) => {
+  // 다둥이 반려동물 추가 또는 수정 저장
+  const handleSavePetItem = async (e) => {
     e.preventDefault();
+    const trimmedName = petName.trim();
+    if (!trimmedName) {
+      alert('반려동물 이름을 입력해 주세요.');
+      return;
+    }
+
+    let updatedPets = [];
+    if (editingPetId) {
+      updatedPets = petsList.map((p) =>
+        p.id === editingPetId
+          ? {
+              ...p,
+              petSpecies,
+              petName: trimmedName,
+              petBreed: petBreed.trim(),
+              petWeight: petWeight.trim(),
+              petNote: petNote.trim(),
+            }
+          : p
+      );
+    } else {
+      const newPet = {
+        id: `pet-${Date.now()}`,
+        petSpecies,
+        petName: trimmedName,
+        petBreed: petBreed.trim(),
+        petWeight: petWeight.trim(),
+        petNote: petNote.trim(),
+      };
+      updatedPets = [...petsList, newPet];
+    }
+
+    const summaryText =
+      updatedPets.length > 1
+        ? `${updatedPets[0].petName} 외 ${updatedPets.length - 1}마리`
+        : updatedPets[0]?.petName || '반려동물';
+
     try {
-      const petDetail = { petSpecies, petName, petBreed, petWeight, petNote };
-      const prefix = petSpecies === 'cat' ? '🐱' : '🐶';
-      const summary = petBreed ? `${prefix} ${petName} (${petBreed})` : `${prefix} ${petName}`;
       await updateDoc(doc(db, 'users', user.uid), {
-        extraInfo: summary,
-        petDetail,
+        pets: updatedPets,
+        extraInfo: summaryText,
       });
-      setUserProfile({ ...userProfile, extraInfo: summary, petDetail });
-      alert('반려동물 프로필이 안전하게 저장되었습니다!');
+      setPetsList(updatedPets);
+      setUserProfile({ ...userProfile, pets: updatedPets, extraInfo: summaryText });
+      resetPetForm();
+      alert(editingPetId ? '반려동물 정보가 수정되었습니다!' : '새 반려동물이 추가되었습니다!');
     } catch (err) {
       alert('저장 실패: ' + err.message);
     }
   };
 
-  // 사장님: 일정 차단 등록 (날짜 전체 휴무 또는 특정 타임슬롯 차단)
+  const handleEditPetClick = (pet) => {
+    setEditingPetId(pet.id);
+    setPetSpecies(pet.petSpecies || 'dog');
+    setPetName(pet.petName || '');
+    setPetBreed(pet.petBreed || '');
+    setPetWeight(pet.petWeight || '');
+    setPetNote(pet.petNote || '');
+  };
+
+  const handleDeletePet = async (petId) => {
+    if (!window.confirm('이 반려동물 프로필을 삭제하시겠습니까?')) return;
+    const updatedPets = petsList.filter((p) => p.id !== petId);
+    const summaryText =
+      updatedPets.length > 1
+        ? `${updatedPets[0].petName} 외 ${updatedPets.length - 1}마리`
+        : updatedPets[0]?.petName || '반려동물';
+
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        pets: updatedPets,
+        extraInfo: summaryText,
+      });
+      setPetsList(updatedPets);
+      setUserProfile({ ...userProfile, pets: updatedPets, extraInfo: summaryText });
+      if (editingPetId === petId) resetPetForm();
+    } catch (err) {
+      alert('삭제 실패: ' + err.message);
+    }
+  };
+
+  const resetPetForm = () => {
+    setEditingPetId(null);
+    setPetSpecies('dog');
+    setPetName('');
+    setPetBreed('');
+    setPetWeight('');
+    setPetNote('');
+  };
+
+  // 사장님: 일정 차단 등록
   const handleAddBlockedSlot = async (e) => {
     e.preventDefault();
     if (!blockDate) {
@@ -665,7 +805,7 @@ export default function App() {
         shopId: user.uid,
         shopName: userProfile.extraInfo,
         date: blockDate,
-        type: blockType, // 'full' | 'slot'
+        type: blockType,
         timeSlot: blockType === 'full' ? 'ALL' : blockTimeSlot,
         reason: blockReason.trim() || (blockType === 'full' ? '매장 휴무일' : '일정 마감'),
         createdAt: serverTimestamp(),
@@ -884,8 +1024,8 @@ export default function App() {
                   <label className="block text-[11px] font-bold text-gray-600 mb-1 ml-1">
                     {role === 'user'
                       ? signUpPetSpecies === 'cat'
-                        ? '반려묘 이름'
-                        : '반려견 이름'
+                        ? '첫째 반려묘 이름 (가입 후 추가 가능)'
+                        : '첫째 반려견 이름 (가입 후 추가 가능)'
                       : '미용실 상호명'}
                   </label>
                   <input
@@ -1004,7 +1144,6 @@ export default function App() {
         ? bookingModalShop.services
         : [{ name: '전체 미용 기본 (1시간30분 소요)', price: bookingModalShop?.price || '50,000원', duration: '1시간 30분' }];
 
-    // 1) 이미 예약된 시간 조회
     const bookedTimesForShopAndDate = bookingModalShop
       ? bookings
           .filter(
@@ -1016,7 +1155,6 @@ export default function App() {
           .map((b) => b.bookingTime || (b.time ? b.time.split(' ')[1] : ''))
       : [];
 
-    // 2) 사장님이 차단(휴무/브레이크타임)한 일정 조회
     const shopBlocksOnDate = bookingModalShop
       ? blockedSlots.filter(
           (blk) =>
@@ -1053,7 +1191,7 @@ export default function App() {
             <div className="bg-orange-100 text-orange-600 p-1.5 rounded-xl text-base shadow-sm">🐾</div>
             <div>
               <p className="text-[11px] text-gray-400 font-bold leading-none">
-                {petSpecies === 'cat' ? '반려묘 집사' : '반려견 보호자'}
+                반려동물 {petsList.length}마리 등록됨
               </p>
               <h2 className="font-extrabold text-gray-800 text-sm mt-0.5">{userProfile.name}님</h2>
             </div>
@@ -1098,8 +1236,8 @@ export default function App() {
                   : 'border-transparent text-gray-400 hover:text-gray-600'
               }`}
             >
-              <span>{petSpecies === 'cat' ? '🐱' : '🐶'}</span>
-              <span>내 아이 관리</span>
+              <span>🐾</span>
+              <span>내 아이 ({petsList.length})</span>
             </button>
           </div>
         </div>
@@ -1342,7 +1480,6 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* 그루머 케어 일지 카드 */}
                     {b.careReport && (
                       <div className="bg-blue-50/80 border border-blue-200 p-3.5 rounded-2xl space-y-1">
                         <div className="flex justify-between items-center">
@@ -1354,7 +1491,6 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* 미용 완료 시 리뷰 작성 또는 내가 남긴 별점 표시 */}
                     {b.status === '미용 완료' && (
                       <div className="pt-1">
                         {b.reviewed ? (
@@ -1395,105 +1531,210 @@ export default function App() {
             </div>
           )}
 
+          {/* 보호자 탭 3: 다둥이 반려동물 추가/수정/삭제 관리 */}
           {userTab === 'pet' && (
-            <form onSubmit={handleSavePetDetail} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-              <div>
-                <h3 className="font-black text-gray-900 text-base">🐾 반려동물 상세 프로필</h3>
-                <p className="text-xs text-gray-400 mt-0.5">미용 예약 시 사장님께 안전하게 전달됩니다.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1.5">반려동물 구분</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPetSpecies('dog')}
-                    className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
-                      petSpecies === 'dog'
-                        ? 'bg-orange-500 text-white border-orange-500'
-                        : 'bg-gray-50 text-gray-600 border-gray-200'
-                    }`}
-                  >
-                    🐶 강아지
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPetSpecies('cat')}
-                    className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
-                      petSpecies === 'cat'
-                        ? 'bg-purple-600 text-white border-purple-600'
-                        : 'bg-gray-50 text-gray-600 border-gray-200'
-                    }`}
-                  >
-                    🐱 고양이
-                  </button>
+            <div className="space-y-4">
+              {/* 등록된 반려동물 카드 리스트 */}
+              <div className="space-y-2.5">
+                <div className="flex justify-between items-center px-1">
+                  <h3 className="font-black text-gray-900 text-sm">
+                    🐾 우리 집 등록된 아이들 ({petsList.length}마리)
+                  </h3>
+                  {editingPetId && (
+                    <button
+                      type="button"
+                      onClick={resetPetForm}
+                      className="text-xs text-orange-600 font-bold underline"
+                    >
+                      + 새 아이 등록 모드로
+                    </button>
+                  )}
                 </div>
+
+                {petsList.length === 0 ? (
+                  <div className="bg-white p-6 rounded-3xl text-center shadow-sm border border-gray-100">
+                    <p className="text-2xl mb-1.5">🐶🐱</p>
+                    <p className="text-xs text-gray-500 font-medium">
+                      아직 등록된 반려동물이 없습니다. 아래에서 첫 번째 아이를 등록해 주세요!
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {petsList.map((p) => {
+                      const isCat = p.petSpecies === 'cat';
+                      return (
+                        <div
+                          key={p.id}
+                          className={`bg-white p-4 rounded-2xl shadow-sm border transition flex justify-between items-start ${
+                            editingPetId === p.id ? 'border-orange-500 ring-2 ring-orange-100' : 'border-gray-100'
+                          }`}
+                        >
+                          <div className="space-y-1 pr-2">
+                            <div className="flex items-center space-x-1.5">
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                                  isCat ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'
+                                }`}
+                              >
+                                {isCat ? '🐱 고양이' : '🐶 강아지'}
+                              </span>
+                              <h4 className="font-black text-gray-900 text-sm">{p.petName}</h4>
+                              {p.petWeight && (
+                                <span className="text-[11px] text-gray-400 font-bold">· {p.petWeight}kg</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 font-medium">
+                              {p.petBreed ? p.petBreed : isCat ? '묘종 미입력' : '견종 미입력'}
+                            </p>
+                            {p.petNote && (
+                              <p className="text-[11px] text-rose-500 font-medium bg-rose-50 px-2.5 py-1 rounded-lg inline-block">
+                                ⚠️ {p.petNote}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex space-x-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleEditPetClick(p)}
+                              className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1.5 rounded-xl font-bold"
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePet(p.id)}
+                              className="text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 px-2.5 py-1.5 rounded-xl font-bold"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  {petSpecies === 'cat' ? '반려묘 이름' : '반려견 이름'}
-                </label>
-                <input
-                  type="text"
-                  value={petName}
-                  onChange={(e) => setPetName(e.target.value)}
-                  required
-                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
-                />
-              </div>
+              {/* 새 반려동물 추가 / 수정 폼 */}
+              <form
+                onSubmit={handleSavePetItem}
+                className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4"
+              >
+                <div>
+                  <h3 className="font-black text-gray-900 text-base">
+                    {editingPetId ? '✏️ 반려동물 정보 수정' : '➕ 새 반려동물 추가 등록'}
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    둘째, 셋째 아이도 등록해 두면 예약 시 아이별로 선택할 수 있습니다.
+                  </p>
+                </div>
 
-              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5">반려동물 구분</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPetSpecies('dog')}
+                      className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
+                        petSpecies === 'dog'
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'bg-gray-50 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      🐶 강아지
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPetSpecies('cat')}
+                      className={`py-2.5 rounded-2xl text-xs font-extrabold border transition ${
+                        petSpecies === 'cat'
+                          ? 'bg-purple-600 text-white border-purple-600'
+                          : 'bg-gray-50 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      🐱 고양이
+                    </button>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-gray-700 mb-1">
-                    {petSpecies === 'cat' ? '묘종' : '견종'}
+                    {petSpecies === 'cat' ? '반려묘 이름' : '반려견 이름'}
                   </label>
                   <input
                     type="text"
-                    placeholder={petSpecies === 'cat' ? '예: 코리안숏헤어, 브리티시' : '예: 말티푸'}
-                    value={petBreed}
-                    onChange={(e) => setPetBreed(e.target.value)}
+                    placeholder={petSpecies === 'cat' ? '예: 치즈, 나비' : '예: 보리, 초코'}
+                    value={petName}
+                    onChange={(e) => setPetName(e.target.value)}
+                    required
                     className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      {petSpecies === 'cat' ? '묘종' : '견종'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={petSpecies === 'cat' ? '예: 코리안숏헤어' : '예: 말티푸'}
+                      value={petBreed}
+                      onChange={(e) => setPetBreed(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">몸무게 (kg)</label>
+                    <input
+                      type="text"
+                      placeholder="예: 4.5"
+                      value={petWeight}
+                      onChange={(e) => setPetWeight(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">몸무게 (kg)</label>
-                  <input
-                    type="text"
-                    placeholder="예: 4.5"
-                    value={petWeight}
-                    onChange={(e) => setPetWeight(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    {petSpecies === 'cat'
+                      ? '특이사항 (예민함, 하악질, 무마취 경험 등)'
+                      : '특이사항 (입질, 겁 많음, 피부질환 등)'}
+                  </label>
+                  <textarea
+                    rows="2"
+                    placeholder="미용사님이 미리 참고해야 할 사항을 적어주세요."
+                    value={petNote}
+                    onChange={(e) => setPetNote(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-3.5 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition resize-none"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  {petSpecies === 'cat'
-                    ? '특이사항 (예민함, 하악질, 무마취 경험 등)'
-                    : '특이사항 (입질, 겁 많음, 피부질환 등)'}
-                </label>
-                <textarea
-                  rows="3"
-                  placeholder="미용사님이 미리 참고해야 할 사항을 적어주세요."
-                  value={petNote}
-                  onChange={(e) => setPetNote(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-2xl p-4 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition resize-none"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
-              >
-                프로필 저장하기
-              </button>
-            </form>
+                <div className="flex space-x-2">
+                  {editingPetId && (
+                    <button
+                      type="button"
+                      onClick={resetPetForm}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-3.5 rounded-2xl text-sm transition"
+                    >
+                      수정 취소
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
+                  >
+                    {editingPetId ? '수정 내용 저장' : '+ 반려동물 추가하기'}
+                  </button>
+                </div>
+              </form>
+            </div>
           )}
         </main>
 
-        {/* [모달 1] 제휴 업체별 날짜 · 1시간30분 단위 시간 슬롯 · 미용 방식 상세 선택 모달 (최상단 z-[9999]) */}
+        {/* [모달 1] 제휴 업체별 예약 모달 (다둥이 아이 선택 기능 포함) */}
         {bookingModalShop && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
@@ -1522,7 +1763,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 최근 보호자 후기 미리보기 */}
               {bookingModalShop.shopReviews && bookingModalShop.shopReviews.length > 0 && (
                 <div className="bg-amber-50/70 border border-amber-200/70 p-3 rounded-2xl space-y-1">
                   <p className="text-[11px] font-extrabold text-amber-800">💬 최근 방문 보호자 후기</p>
@@ -1534,46 +1774,97 @@ export default function App() {
               )}
 
               <form onSubmit={handleConfirmBooking} className="space-y-4">
+                {/* 0. 등록된 다둥이 중 이번에 미용할 아이 선택 */}
                 <div>
-                  <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
-                    🐾 미용 대상 선택
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="block text-xs font-extrabold text-gray-700">
+                      🐾 이번에 미용할 아이 선택
+                    </label>
                     <button
                       type="button"
-                      disabled={bookingModalShop.petType === 'cat'}
                       onClick={() => {
-                        setBookingPetSpecies('dog');
-                        setCustomStyleDetail('얼굴 동그랗게 (곰돌이컷)');
+                        setBookingModalShop(null);
+                        setUserTab('pet');
                       }}
-                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
-                        bookingModalShop.petType === 'cat'
-                          ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
-                          : bookingPetSpecies === 'dog'
-                          ? 'bg-orange-500 text-white border-orange-500'
-                          : 'bg-white text-gray-600 border-gray-200'
-                      }`}
+                      className="text-[11px] text-orange-600 font-bold underline"
                     >
-                      🐶 강아지 미용
-                    </button>
-                    <button
-                      type="button"
-                      disabled={bookingModalShop.petType === 'dog'}
-                      onClick={() => {
-                        setBookingPetSpecies('cat');
-                        setCustomStyleDetail('무마취 전체 클리핑 (사자컷/올빡)');
-                      }}
-                      className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
-                        bookingModalShop.petType === 'dog'
-                          ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
-                          : bookingPetSpecies === 'cat'
-                          ? 'bg-purple-600 text-white border-purple-600'
-                          : 'bg-white text-gray-600 border-gray-200'
-                      }`}
-                    >
-                      🐱 고양이 미용
+                      + 아이 추가/관리
                     </button>
                   </div>
+
+                  {petsList.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      {petsList.map((pet) => {
+                        const isIncompatible =
+                          (bookingModalShop.petType === 'cat' && pet.petSpecies !== 'cat') ||
+                          (bookingModalShop.petType === 'dog' && pet.petSpecies !== 'dog');
+                        const isChosen = selectedBookingPetId === pet.id;
+                        return (
+                          <button
+                            key={pet.id}
+                            type="button"
+                            disabled={isIncompatible}
+                            onClick={() => handleSelectPetForBooking(pet)}
+                            className={`p-2.5 rounded-2xl border-2 text-left transition ${
+                              isIncompatible
+                                ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed'
+                                : isChosen
+                                ? pet.petSpecies === 'cat'
+                                  ? 'bg-purple-50 border-purple-600 text-purple-900'
+                                  : 'bg-orange-50 border-orange-500 text-orange-900'
+                                : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                            }`}
+                          >
+                            <p className="text-xs font-black">
+                              {pet.petSpecies === 'cat' ? '🐱' : '🐶'} {pet.petName}
+                            </p>
+                            <p className="text-[10px] opacity-75 truncate mt-0.5">
+                              {isIncompatible
+                                ? '이 매장 미취급 축종'
+                                : pet.petBreed || (pet.petSpecies === 'cat' ? '고양이' : '강아지')}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        disabled={bookingModalShop.petType === 'cat'}
+                        onClick={() => {
+                          setBookingPetSpecies('dog');
+                          setCustomStyleDetail('얼굴 동그랗게 (곰돌이컷)');
+                        }}
+                        className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                          bookingModalShop.petType === 'cat'
+                            ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
+                            : bookingPetSpecies === 'dog'
+                            ? 'bg-orange-500 text-white border-orange-500'
+                            : 'bg-white text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        🐶 강아지 미용
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bookingModalShop.petType === 'dog'}
+                        onClick={() => {
+                          setBookingPetSpecies('cat');
+                          setCustomStyleDetail('무마취 전체 클리핑 (사자컷/올빡)');
+                        }}
+                        className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
+                          bookingModalShop.petType === 'dog'
+                            ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed'
+                            : bookingPetSpecies === 'cat'
+                            ? 'bg-purple-600 text-white border-purple-600'
+                            : 'bg-white text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        🐱 고양이 미용
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1593,7 +1884,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* 1시간 30분 단위 타임슬롯 선택 버튼 (예약 마감 + 사장님 일정 차단 반영) */}
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="block text-xs font-extrabold text-gray-700">
@@ -1981,7 +2271,6 @@ export default function App() {
           </>
         )}
 
-        {/* 사장님 탭 2: 일정 차단(휴무/브레이크타임) 관리 */}
         {ownerTab === 'schedule' && (
           <div className="space-y-4">
             <form
@@ -2108,7 +2397,6 @@ export default function App() {
           </div>
         )}
 
-        {/* 사장님 탭 3: 매장 정보 수정 & 보호자 후기 확인 */}
         {ownerTab === 'shop' && (
           <div className="space-y-5">
             <form
@@ -2280,7 +2568,6 @@ export default function App() {
               </button>
             </form>
 
-            {/* 우리 매장 보호자 후기 모아보기 */}
             <div className="bg-slate-800 p-5 rounded-3xl border border-slate-700/60 space-y-3">
               <h4 className="font-black text-white text-sm">⭐ 우리 매장 보호자 후기 ({myShopReviews.length}건)</h4>
               {myShopReviews.length === 0 ? (

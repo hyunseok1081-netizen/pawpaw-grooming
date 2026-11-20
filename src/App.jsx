@@ -20,7 +20,63 @@ import {
   query,
   orderBy,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
+
+const BLIND_REVIEW_MESSAGE = '해당 후기는 비방성/욕설로 인하여 가리기 처리되었습니다.';
+const MAX_COMPRESSED_DATA_URL_CHARS = 700000; // Firestore 1MB 문서 한도 안전선
+
+// 보호자 이름 가운데 마스킹 (예: 홍길동 -> 홍*동, 홍길 -> 홍*, 남궁민수 -> 남궁*수)
+function maskCustomerName(rawName) {
+  const clean = String(rawName || '보호자').trim();
+  if (!clean) return '보*자';
+  const chars = Array.from(clean);
+  if (chars.length === 1) return `${chars[0]}*`;
+  if (chars.length === 2) return `${chars[0]}*`;
+  const middleStars = '*'.repeat(chars.length - 2);
+  return `${chars[0]}${middleStars}${chars[chars.length - 1]}`;
+}
+
+// 대중적인 반려동물 체급 기준 (소형 7kg 미만 / 중형 7~15kg 미만 / 대형 15kg 이상)
+const SIZE_TIERS = {
+  small: {
+    id: 'small',
+    label: '소형 (7kg 미만)',
+    shortLabel: '소형',
+    extraFee: 0,
+  },
+  medium: {
+    id: 'medium',
+    label: '중형 (7~15kg 미만)',
+    shortLabel: '중형',
+    extraFee: 15000,
+  },
+  large: {
+    id: 'large',
+    label: '대형 (15kg 이상)',
+    shortLabel: '대형',
+    extraFee: 30000,
+  },
+};
+
+function getSizeTierByWeight(weightValue) {
+  const num = parseFloat(String(weightValue ?? '').replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(num) || num <= 0) return 'small';
+  if (num < 7) return 'small';
+  if (num < 15) return 'medium';
+  return 'large';
+}
+
+function parsePriceNumber(priceStr, fallback = 50000) {
+  if (typeof priceStr === 'number' && Number.isFinite(priceStr)) return priceStr;
+  const digits = String(priceStr || '').replace(/[^0-9]/g, '');
+  const parsed = parseInt(digits, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatKrw(amount) {
+  return `${Number(amount || 0).toLocaleString('ko-KR')}원`;
+}
 
 // 기본 제휴 미용실 (1시간 30분 단위 타임슬롯 + 샘플 후기/답글 포함)
 const DEFAULT_SHOPS = [
@@ -44,6 +100,7 @@ const DEFAULT_SHOPS = [
           '가위컷 라인이 정말 동글동글 예쁘게 나왔어요! 아이가 전혀 스트레스 안 받아해서 다음에도 또 예약할 예정입니다.',
         ownerReply:
           '초코 보호자님 소중한 후기 감사합니다! 초코가 너무 얌전하고 착해서 가위컷이 예쁘게 나왔어요. 다음에 또 뵈어요 🐾',
+        hidden: false,
         date: '2026.11.12',
       },
       {
@@ -54,6 +111,7 @@ const DEFAULT_SHOPS = [
         comment:
           '탄산 스파하고 나서 털이 훨씬 부드러워졌어요. 1시간 30분 딱 맞춰서 꼼꼼하게 케어해 주십니다.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.05',
       },
     ],
@@ -86,6 +144,7 @@ const DEFAULT_SHOPS = [
           '예민한 냥이라 걱정했는데 강아지 소리가 전혀 안 나고 핸들러님이 능숙하셔서 하악질 한 번 없이 끝났어요!',
         ownerReply:
           '나비가 용기를 내서 잘 견뎌줘서 정말 대견했어요! 편안한 집에서 푹 쉬게 해주세요 🐱',
+        hidden: false,
         date: '2026.11.14',
       },
       {
@@ -96,6 +155,7 @@ const DEFAULT_SHOPS = [
         comment:
           '배 쪽 엉킴이 심했는데 피부 상처 하나 없이 깔끔하게 정리해 주셨습니다. 집사님들께 강추해요.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.08',
       },
     ],
@@ -127,6 +187,7 @@ const DEFAULT_SHOPS = [
         comment:
           '노령견이라 다리 관절이 약한데 중간중간 쉬어가면서 배려해 주셔서 너무 감사했습니다.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.10',
       },
       {
@@ -137,6 +198,7 @@ const DEFAULT_SHOPS = [
         comment:
           '강아지랑 고양이 공간이 완전히 분리되어 있어서 냥이가 안심하고 목욕까지 잘 마쳤어요.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.02',
       },
     ],
@@ -168,6 +230,7 @@ const DEFAULT_SHOPS = [
         comment:
           '스포팅 스타일 디테일이 남다릅니다. 미용 끝나고 케어 일지도 꼼꼼하게 보내주셔서 믿음이 가요.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.15',
       },
     ],
@@ -199,6 +262,7 @@ const DEFAULT_SHOPS = [
         comment:
           '100% 예약제라 다른 손님이랑 마주칠 일이 없어서 고양이가 훨씬 편안해합니다.',
         ownerReply: '',
+        hidden: false,
         date: '2026.11.11',
       },
     ],
@@ -244,26 +308,47 @@ function getPetTypeBadge(petType) {
   return { label: '🐶 강아지 전문', bg: 'bg-amber-100 text-amber-800', icon: '🐶', color: '#f97316' };
 }
 
-// 후기 사진 리사이징 및 압축 (Firestore 저장용 base64)
-function compressImageFile(file, maxWidth = 600, quality = 0.72) {
+// 후기 사진 안전 리사이징 및 압축 (Firestore 1MB 한도 초과 방지)
+function renderCompressedDataUrl(img, maxWidth, quality) {
+  const scale = img.width > maxWidth ? maxWidth / img.width : 1;
+  const width = Math.max(1, Math.round(img.width * scale));
+  const height = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+function compressImageFile(file) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const scale = img.width > maxWidth ? maxWidth / img.width : 1;
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = ev.target.result;
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const attempts = [
+        [480, 0.62],
+        [380, 0.52],
+        [300, 0.45],
+      ];
+      let resultUrl = '';
+      for (const [w, q] of attempts) {
+        resultUrl = renderCompressedDataUrl(img, w, q);
+        if (resultUrl.length <= MAX_COMPRESSED_DATA_URL_CHARS) {
+          resolve(resultUrl);
+          return;
+        }
+      }
+      reject(new Error('사진 용량이 너무 커서 첨부할 수 없습니다. 더 작은 사진을 선택해 주세요.'));
     };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('이미지 파일을 읽을 수 없습니다.'));
+    };
+    img.src = objectUrl;
   });
 }
 
@@ -430,6 +515,13 @@ export default function App() {
   const [dbShops, setDbShops] = useState([]);
   const [blockedSlots, setBlockedSlots] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+
+  // 알림 센터 모달 & 인앱 토스트 알림 상태
+  const [showNotiModal, setShowNotiModal] = useState(false);
+  const [liveToastNoti, setLiveToastNoti] = useState(null);
+  const seenNotiIdsRef = useRef(new Set());
+  const initialNotiLoadedRef = useRef(false);
 
   // 보호자 화면 탭 & 검색 & 지도 상태
   const [userTab, setUserTab] = useState('search');
@@ -450,17 +542,18 @@ export default function App() {
   const [petWeight, setPetWeight] = useState('');
   const [petNote, setPetNote] = useState('');
 
-  // 보호자 상세 예약 모달 상태
+  // 보호자 상세 예약 모달 상태 (체급별 비용 포함)
   const [bookingModalShop, setBookingModalShop] = useState(null);
   const [selectedBookingPetId, setSelectedBookingPetId] = useState('');
   const [bookingPetSpecies, setBookingPetSpecies] = useState('dog');
+  const [bookingSizeTier, setBookingSizeTier] = useState('small');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [selectedServiceIdx, setSelectedServiceIdx] = useState(0);
   const [customStyleDetail, setCustomStyleDetail] = useState('얼굴 동그랗게 (곰돌이컷)');
   const [bookingNote, setBookingNote] = useState('');
 
-  // 매장 후기 전체 보기 모달 상태 (shopId를 저장해 실시간 리뷰/답글 반영)
+  // 매장 후기 전체 보기 모달 상태
   const [viewReviewsShopId, setViewReviewsShopId] = useState(null);
 
   // 보호자 리뷰 작성 모달 상태 (사진 첨부 포함)
@@ -528,6 +621,27 @@ export default function App() {
       },
       { enableHighAccuracy: true, timeout: 6000 }
     );
+  };
+
+  // 상대방에게 인앱 알림 발송 헬퍼
+  const sendNotification = async ({ recipientId, title, message, type }) => {
+    if (!recipientId || recipientId === user?.uid || String(recipientId).startsWith('default-')) {
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        recipientId,
+        senderId: user?.uid || '',
+        senderName: maskCustomerName(userProfile?.name || '사용자'),
+        title,
+        message,
+        type: type || 'info',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('알림 발송 실패:', err);
+    }
   };
 
   useEffect(() => {
@@ -599,6 +713,9 @@ export default function App() {
         setUser(null);
         setUserProfile(null);
         setPetsList([]);
+        setNotifications([]);
+        initialNotiLoadedRef.current = false;
+        seenNotiIdsRef.current = new Set();
       }
       setLoading(false);
     });
@@ -628,13 +745,64 @@ export default function App() {
       setReviews(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
+    const qNoti = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
+    const unsubNoti = onSnapshot(qNoti, (snapshot) => {
+      const mine = snapshot.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((n) => n.recipientId === user.uid);
+
+      setNotifications(mine);
+
+      if (!initialNotiLoadedRef.current) {
+        mine.forEach((n) => seenNotiIdsRef.current.add(n.id));
+        initialNotiLoadedRef.current = true;
+        return;
+      }
+
+      const brandNew = mine.filter((n) => !seenNotiIdsRef.current.has(n.id) && !n.read);
+      mine.forEach((n) => seenNotiIdsRef.current.add(n.id));
+
+      if (brandNew.length > 0) {
+        setLiveToastNoti(brandNew[0]);
+      }
+    });
+
     return () => {
       unsubBookings();
       unsubShops();
       unsubBlocked();
       unsubReviews();
+      unsubNoti();
     };
   }, [user]);
+
+  useEffect(() => {
+    if (!liveToastNoti) return;
+    const timer = setTimeout(() => setLiveToastNoti(null), 4500);
+    return () => clearTimeout(timer);
+  }, [liveToastNoti]);
+
+  const handleMarkNotiRead = async (notiId) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notiId), { read: true });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleMarkAllNotiRead = async () => {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      unread.forEach((n) => {
+        batch.update(doc(db, 'notifications', n.id), { read: true });
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -701,10 +869,12 @@ export default function App() {
       : shop.petType === 'cat'
       ? 'cat'
       : 'dog';
+    const inferredTier = chosenPet ? getSizeTierByWeight(chosenPet.petWeight) : 'small';
 
     setBookingModalShop(shop);
     setSelectedBookingPetId(chosenPet ? chosenPet.id : 'manual');
     setBookingPetSpecies(initialSpecies);
+    setBookingSizeTier(inferredTier);
     setBookingDate(tomorrow);
     setBookingTime('');
     setSelectedServiceIdx(0);
@@ -717,6 +887,7 @@ export default function App() {
   const handleSelectPetForBooking = (pet) => {
     setSelectedBookingPetId(pet.id);
     setBookingPetSpecies(pet.petSpecies);
+    setBookingSizeTier(getSizeTierByWeight(pet.petWeight));
     setCustomStyleDetail(
       pet.petSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
     );
@@ -745,6 +916,10 @@ export default function App() {
           ];
 
     const chosenService = shopServices[selectedServiceIdx] || shopServices[0];
+    const baseAmount = parsePriceNumber(chosenService.price, 50000);
+    const tierInfo = SIZE_TIERS[bookingSizeTier] || SIZE_TIERS.small;
+    const totalAmount = baseAmount + tierInfo.extraFee;
+
     const selectedPetObj = petsList.find((p) => p.id === selectedBookingPetId);
     const activeSpecies = selectedPetObj ? selectedPetObj.petSpecies : bookingPetSpecies;
     const speciesTag = activeSpecies === 'cat' ? '🐱 고양이' : '🐶 강아지';
@@ -770,9 +945,11 @@ export default function App() {
         customer: userProfile?.name || '보호자',
         petId: selectedPetObj?.id || '',
         petSpecies: activeSpecies,
+        sizeTier: tierInfo.id,
+        sizeTierLabel: tierInfo.label,
         pet: petSummary,
         petNote: finalPetNote,
-        service: `${chosenService.name} (${chosenService.price})`,
+        service: `${chosenService.name} · ${tierInfo.shortLabel} (${formatKrw(totalAmount)})`,
         styleDetail: customStyleDetail,
         requestNote: bookingNote || '없음',
         bookingDate,
@@ -782,7 +959,11 @@ export default function App() {
         reviewed: false,
         createdAt: serverTimestamp(),
       });
-      alert(`"${bookingModalShop.name}" (${bookingDate} ${bookingTime}) 예약 신청이 완료되었습니다!`);
+      alert(
+        `"${bookingModalShop.name}" (${bookingDate} ${bookingTime}, ${tierInfo.shortLabel} ${formatKrw(
+          totalAmount
+        )}) 예약 신청이 완료되었습니다!`
+      );
       setBookingModalShop(null);
       setUserTab('bookings');
     } catch (err) {
@@ -801,36 +982,43 @@ export default function App() {
 
   // 리뷰 사진 파일 선택 핸들러
   const handleReviewPhotoChange = async (e) => {
-    const file = e.target.files?.[0];
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
     if (!file) return;
+
     setUploadingPhoto(true);
     try {
       const compressed = await compressImageFile(file);
       setReviewPhotoData(compressed);
     } catch (err) {
-      alert('사진을 불러오지 못했습니다: ' + err.message);
+      alert(err?.message || '사진을 불러오지 못했습니다.');
+      setReviewPhotoData('');
     } finally {
       setUploadingPhoto(false);
+      inputEl.value = '';
     }
   };
 
-  // 보호자: 별점/후기 + 사진 등록
+  // 보호자: 별점/후기 + 사진 등록 + 사장님 알림 발송
   const handleSubmitReview = async (e) => {
     e.preventDefault();
-    if (!reviewModalBooking) return;
+    if (!reviewModalBooking || uploadingPhoto) return;
     const finalComment = reviewText.trim() || '꼼꼼하고 친절하게 잘 미용해 주셨어요!';
+    const displayCustomerName = maskCustomerName(userProfile?.name || '보호자');
+
     try {
       await addDoc(collection(db, 'reviews'), {
         bookingId: reviewModalBooking.id,
         shopId: reviewModalBooking.shopId,
         shopName: reviewModalBooking.shop,
         customerId: user.uid,
-        customerName: userProfile?.name || '보호자',
+        customerName: displayCustomerName,
         pet: reviewModalBooking.pet,
         rating: Number(reviewRating),
         comment: finalComment,
         photoUrl: reviewPhotoData || '',
         ownerReply: '',
+        hidden: false,
         date: new Date().toLocaleDateString('ko-KR'),
         createdAt: serverTimestamp(),
       });
@@ -840,6 +1028,17 @@ export default function App() {
         reviewComment: finalComment,
         reviewPhotoUrl: reviewPhotoData || '',
       });
+
+      await sendNotification({
+        recipientId: reviewModalBooking.shopId,
+        title: `⭐ 새 후기 등록 (${reviewRating}점)`,
+        message: `${displayCustomerName}님이 "${reviewModalBooking.shop}"에 후기를 남겼습니다: "${finalComment.slice(
+          0,
+          36
+        )}"`,
+        type: 'review',
+      });
+
       alert('소중한 별점 후기가 등록되었습니다!');
       setReviewModalBooking(null);
       setReviewText('');
@@ -850,7 +1049,29 @@ export default function App() {
     }
   };
 
-  // 사장님: 후기 답글 저장
+  // 사장님: 후기 가리기 / 해제 토글
+  const handleToggleHideReview = async (rev) => {
+    if (!rev?.id) return;
+    if (String(rev.id).startsWith('def-rev-')) {
+      alert('기본 샘플 후기는 가리기 상태를 변경할 수 없습니다.');
+      return;
+    }
+    const nextHidden = !Boolean(rev.hidden);
+    try {
+      await updateDoc(doc(db, 'reviews', rev.id), {
+        hidden: nextHidden,
+      });
+      alert(
+        nextHidden
+          ? '후기가 비방성/욕설 가리기 처리되었습니다.'
+          : '후기 가리기가 해제되었습니다.'
+      );
+    } catch (err) {
+      alert('가리기 상태 변경 실패: ' + err.message);
+    }
+  };
+
+  // 사장님: 후기 답글 저장 + 보호자 알림 발송
   const handleSaveOwnerReply = async (reviewId) => {
     const trimmedReply = replyDraftText.trim();
     if (!trimmedReply) {
@@ -871,6 +1092,16 @@ export default function App() {
           });
         }
       }
+
+      if (targetReview?.customerId) {
+        await sendNotification({
+          recipientId: targetReview.customerId,
+          title: `💬 ${targetReview.shopName || '미용실'} 사장님 답글`,
+          message: `작성하신 후기에 사장님 답글이 달렸습니다: "${trimmedReply.slice(0, 36)}"`,
+          type: 'reply',
+        });
+      }
+
       setReplyingReviewId(null);
       setReplyDraftText('');
       alert('사장님 답글이 등록되었습니다!');
@@ -1040,19 +1271,30 @@ export default function App() {
     }
   };
 
-  // 사장님: 미용 완료 처리 + 그루머 케어 일지 저장
+  // 사장님: 미용 완료 처리 + 그루머 케어 일지 저장 + 보호자 알림 발송
   const handleCompleteWithCareNote = async (e) => {
     e.preventDefault();
     if (!careModalBooking) return;
+    const finalCareNote = careNoteInput.trim() || '오늘 미용도 스트레스 없이 얌전히 잘 받았습니다!';
     try {
       await updateDoc(doc(db, 'bookings', careModalBooking.id), {
         status: '미용 완료',
         careReport: {
           condition: careCondition,
-          note: careNoteInput.trim() || '오늘 미용도 스트레스 없이 얌전히 잘 받았습니다!',
+          note: finalCareNote,
           completedAt: new Date().toLocaleDateString('ko-KR'),
         },
       });
+
+      if (careModalBooking.customerId) {
+        await sendNotification({
+          recipientId: careModalBooking.customerId,
+          title: `✂️ ${careModalBooking.shop || '미용실'} 미용 완료!`,
+          message: `${careModalBooking.pet} 미용이 완료되고 케어 일지(${careCondition})가 도착했습니다.`,
+          type: 'care',
+        });
+      }
+
       alert('미용 완료 처리 및 보호자 케어 일지가 전송되었습니다!');
       setCareModalBooking(null);
       setCareNoteInput('');
@@ -1145,6 +1387,89 @@ export default function App() {
       alert('상태 변경 실패: ' + err.message);
     }
   };
+
+  const unreadNotiCount = notifications.filter((n) => !n.read).length;
+
+  const renderNotiModal = () =>
+    showNotiModal && (
+      <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[10001]">
+        <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[80vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100 text-gray-900">
+          <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+            <div>
+              <h3 className="font-black text-gray-900 text-base">🔔 알림 센터</h3>
+              <p className="text-[11px] text-gray-400">
+                미용 완료, 후기 등록, 사장님 답글 알림 내역
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              {unreadNotiCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAllNotiRead}
+                  className="text-[11px] text-orange-600 font-bold underline"
+                >
+                  모두 읽음
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowNotiModal(false)}
+                className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 font-bold hover:bg-gray-200 transition"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {notifications.length === 0 ? (
+              <div className="text-center py-8 text-xs text-gray-400">
+                아직 도착한 알림이 없습니다.
+              </div>
+            ) : (
+              notifications.map((n) => (
+                <div
+                  key={n.id}
+                  onClick={() => !n.read && handleMarkNotiRead(n.id)}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition space-y-1 ${
+                    n.read
+                      ? 'bg-gray-50 border-gray-100 text-gray-500'
+                      : 'bg-orange-50/70 border-orange-200 text-gray-900'
+                  }`}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-extrabold">{n.title}</span>
+                    {!n.read && (
+                      <span className="text-[10px] bg-orange-500 text-white px-2 py-0.5 rounded-full font-bold">
+                        NEW
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs leading-relaxed">{n.message}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+
+  const renderLiveToast = () =>
+    liveToastNoti && (
+      <div
+        onClick={() => {
+          setLiveToastNoti(null);
+          setShowNotiModal(true);
+        }}
+        className="fixed bottom-5 left-1/2 -translate-x-1/2 max-w-sm w-[92%] bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-orange-400/60 z-[10002] cursor-pointer flex items-start space-x-3"
+      >
+        <span className="text-lg">🔔</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-black text-orange-300 truncate">{liveToastNoti.title}</p>
+          <p className="text-xs text-slate-200 mt-0.5 line-clamp-2">{liveToastNoti.message}</p>
+        </div>
+      </div>
+    );
 
   if (loading) {
     return (
@@ -1319,11 +1644,15 @@ export default function App() {
       const sampleReviews = Array.isArray(shop.defaultReviews) ? shop.defaultReviews : [];
       const mergedReviews = [...liveReviews, ...sampleReviews];
 
+      const visibleReviewsForRating = mergedReviews.filter((r) => !r.hidden);
       const totalReviews = mergedReviews.length;
-      const sumScore = mergedReviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0);
+      const sumScore = visibleReviewsForRating.reduce(
+        (acc, r) => acc + (Number(r.rating) || 5),
+        0
+      );
       const avgRating =
-        totalReviews > 0
-          ? (sumScore / totalReviews).toFixed(1)
+        visibleReviewsForRating.length > 0
+          ? (sumScore / visibleReviewsForRating.length).toFixed(1)
           : shop.baseRating
           ? Number(shop.baseRating).toFixed(1)
           : '5.0';
@@ -1383,6 +1712,11 @@ export default function App() {
             },
           ];
 
+    const activeServiceObj = modalServices[selectedServiceIdx] || modalServices[0];
+    const activeBasePrice = parsePriceNumber(activeServiceObj?.price, 50000);
+    const activeTierObj = SIZE_TIERS[bookingSizeTier] || SIZE_TIERS.small;
+    const estimatedTotalPrice = activeBasePrice + activeTierObj.extraFee;
+
     const bookedTimesForShopAndDate = bookingModalShop
       ? bookings
           .filter(
@@ -1423,7 +1757,9 @@ export default function App() {
             '위생·목욕 중심 (최소 컷)',
           ];
 
-    const isAnyModalOpen = Boolean(bookingModalShop || reviewModalBooking || activeReviewsShop);
+    const isAnyModalOpen = Boolean(
+      bookingModalShop || reviewModalBooking || activeReviewsShop || showNotiModal
+    );
 
     return (
       <div className="min-h-screen bg-gray-50 pb-24">
@@ -1437,12 +1773,26 @@ export default function App() {
               <h2 className="font-extrabold text-gray-800 text-sm mt-0.5">{userProfile.name}님</h2>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-xl font-bold transition"
-          >
-            로그아웃
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setShowNotiModal(true)}
+              className="relative text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 px-3 py-1.5 rounded-xl font-extrabold border border-orange-200 transition"
+            >
+              🔔 알림
+              {unreadNotiCount > 0 && (
+                <span className="ml-1 bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                  {unreadNotiCount}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-xl font-bold transition"
+            >
+              로그아웃
+            </button>
+          </div>
         </header>
 
         <div className="bg-white border-b border-gray-100 sticky top-[57px] z-10 shadow-sm">
@@ -1610,7 +1960,9 @@ export default function App() {
                         </div>
                         <h4 className="font-black text-gray-900 text-sm">{selectedMapShop.name}</h4>
                         <p className="text-xs text-gray-500">{selectedMapShop.desc}</p>
-                        <p className="text-xs font-extrabold text-orange-600">{selectedMapShop.price}</p>
+                        <p className="text-xs font-extrabold text-orange-600">
+                          {selectedMapShop.price} (소·중·대형 체급별 차등)
+                        </p>
                       </div>
                       <button
                         onClick={() => openShopBookingModal(selectedMapShop)}
@@ -1679,7 +2031,7 @@ export default function App() {
                               {shop.region} {shop.district} · {shop.desc}
                             </p>
                             <p className="text-xs font-bold text-orange-600">
-                              {shop.price || '50,000원~'}
+                              {shop.price || '50,000원~'} · 체급별 요금 차등
                             </p>
                           </div>
                           <div className="flex flex-col space-y-1.5 shrink-0">
@@ -1725,6 +2077,7 @@ export default function App() {
               ) : (
                 myBookings.map((b) => {
                   const linkedReview = reviews.find((r) => r.bookingId === b.id);
+                  const isHidden = Boolean(linkedReview?.hidden);
                   return (
                     <div
                       key={b.id}
@@ -1756,7 +2109,7 @@ export default function App() {
                           <span className="font-bold text-gray-800">{b.time}</span>
                         </p>
                         <p>
-                          ✂️ 선택 메뉴:{' '}
+                          ✂️ 선택 메뉴/비용:{' '}
                           <span className="font-bold text-gray-800">{b.service || '기본 미용'}</span>
                         </p>
                         {b.styleDetail && (
@@ -1802,13 +2155,21 @@ export default function App() {
                                   </button>
                                 )}
                               </div>
-                              <p className="text-gray-700 leading-relaxed">{b.reviewComment}</p>
-                              {(b.reviewPhotoUrl || linkedReview?.photoUrl) && (
-                                <img
-                                  src={b.reviewPhotoUrl || linkedReview?.photoUrl}
-                                  alt="후기 첨부 사진"
-                                  className="w-full max-h-48 object-cover rounded-xl border border-amber-200"
-                                />
+                              {isHidden ? (
+                                <p className="text-gray-500 italic bg-gray-100 p-2.5 rounded-xl">
+                                  {BLIND_REVIEW_MESSAGE}
+                                </p>
+                              ) : (
+                                <>
+                                  <p className="text-gray-700 leading-relaxed">{b.reviewComment}</p>
+                                  {(b.reviewPhotoUrl || linkedReview?.photoUrl) && (
+                                    <img
+                                      src={b.reviewPhotoUrl || linkedReview?.photoUrl}
+                                      alt="후기 첨부 사진"
+                                      className="w-full max-h-48 object-cover rounded-xl border border-amber-200"
+                                    />
+                                  )}
+                                </>
                               )}
                               {linkedReview?.ownerReply && (
                                 <div className="bg-white border border-amber-200/80 p-2.5 rounded-xl space-y-0.5">
@@ -1856,6 +2217,13 @@ export default function App() {
           {/* 보호자 탭 3: 다둥이 반려동물 추가/수정/삭제 관리 */}
           {userTab === 'pet' && (
             <div className="space-y-4">
+              <div className="bg-white p-3.5 rounded-2xl border border-orange-100 text-[11px] text-gray-600 leading-relaxed">
+                <p className="font-extrabold text-orange-700 mb-0.5">
+                  📏 소·중·대형 체급 요금 기준 안내
+                </p>
+                <p>• 소형 (7kg 미만): 기본가 · 중형 (7~15kg 미만): +15,000원 · 대형 (15kg 이상): +30,000원</p>
+              </div>
+
               <div className="space-y-2.5">
                 <div className="flex justify-between items-center px-1">
                   <h3 className="font-black text-gray-900 text-sm">
@@ -1883,6 +2251,7 @@ export default function App() {
                   <div className="space-y-2.5">
                     {petsList.map((p) => {
                       const isCat = p.petSpecies === 'cat';
+                      const tier = SIZE_TIERS[getSizeTierByWeight(p.petWeight)];
                       return (
                         <div
                           key={p.id}
@@ -1893,7 +2262,7 @@ export default function App() {
                           }`}
                         >
                           <div className="space-y-1 pr-2">
-                            <div className="flex items-center space-x-1.5">
+                            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                               <span
                                 className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
                                   isCat
@@ -1902,6 +2271,10 @@ export default function App() {
                                 }`}
                               >
                                 {isCat ? '🐱 고양이' : '🐶 강아지'}
+                              </span>
+                              <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                                {tier.shortLabel}
+                                {tier.extraFee > 0 ? ` (+${tier.extraFee.toLocaleString()}원)` : ' (기본)'}
                               </span>
                               <h4 className="font-black text-gray-900 text-sm">{p.petName}</h4>
                               {p.petWeight && (
@@ -1952,7 +2325,7 @@ export default function App() {
                     {editingPetId ? '✏️ 반려동물 정보 수정' : '➕ 새 반려동물 추가 등록'}
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    둘째, 셋째 아이도 등록해 두면 예약 시 아이별로 선택할 수 있습니다.
+                    몸무게를 입력하면 소형(7kg 미만)·중형(7~15kg 미만)·대형(15kg 이상) 요금이 자동 반영됩니다.
                   </p>
                 </div>
 
@@ -2017,7 +2390,7 @@ export default function App() {
                     <label className="block text-xs font-bold text-gray-700 mb-1">몸무게 (kg)</label>
                     <input
                       type="text"
-                      placeholder="예: 4.5"
+                      placeholder="예: 4.5 / 9 / 18"
                       value={petWeight}
                       onChange={(e) => setPetWeight(e.target.value)}
                       className="w-full bg-gray-50 border border-gray-200 rounded-2xl px-4 py-3 text-sm focus:bg-white focus:border-orange-500 focus:outline-none transition"
@@ -2062,7 +2435,7 @@ export default function App() {
           )}
         </main>
 
-        {/* [모달 1] 제휴 업체별 예약 모달 */}
+        {/* [모달 1] 제휴 업체별 예약 모달 (소·중·대형 체급 요금 계산 포함) */}
         {bookingModalShop && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
@@ -2086,7 +2459,7 @@ export default function App() {
                   </div>
                   <h3 className="font-black text-gray-900 text-base mt-1">{bookingModalShop.name}</h3>
                   <p className="text-[11px] text-gray-400 mt-0.5">
-                    ⏱️ 모든 미용 코스는 1시간 30분 단위로 진행됩니다.
+                    ⏱️ 1시간 30분 단위 · 소(&lt;7kg) 기본 / 중(7~15kg) +1.5만 / 대(15kg+) +3만
                   </p>
                 </div>
                 <button
@@ -2111,10 +2484,11 @@ export default function App() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-700 line-clamp-2">
-                    "{bookingModalShop.shopReviews[0].comment}" —{' '}
-                    <span className="font-bold">
-                      {bookingModalShop.shopReviews[0].customerName}님
-                    </span>
+                    {bookingModalShop.shopReviews[0].hidden
+                      ? BLIND_REVIEW_MESSAGE
+                      : `"${bookingModalShop.shopReviews[0].comment}" — ${maskCustomerName(
+                          bookingModalShop.shopReviews[0].customerName
+                        )}님`}
                   </p>
                 </div>
               )}
@@ -2144,6 +2518,7 @@ export default function App() {
                           (bookingModalShop.petType === 'cat' && pet.petSpecies !== 'cat') ||
                           (bookingModalShop.petType === 'dog' && pet.petSpecies !== 'dog');
                         const isChosen = selectedBookingPetId === pet.id;
+                        const petTier = SIZE_TIERS[getSizeTierByWeight(pet.petWeight)];
                         return (
                           <button
                             key={pet.id}
@@ -2166,7 +2541,7 @@ export default function App() {
                             <p className="text-[10px] opacity-75 truncate mt-0.5">
                               {isIncompatible
                                 ? '이 매장 미취급 축종'
-                                : pet.petBreed || (pet.petSpecies === 'cat' ? '고양이' : '강아지')}
+                                : `${petTier.shortLabel}${pet.petWeight ? ` (${pet.petWeight}kg)` : ''}`}
                             </p>
                           </button>
                         );
@@ -2210,6 +2585,37 @@ export default function App() {
                       </button>
                     </div>
                   )}
+                </div>
+
+                {/* 체급(소·중·대형) 요금 구분 선택 */}
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
+                    ⚖️ 체급(몸무게) 기준 요금 구분
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {Object.values(SIZE_TIERS).map((tier) => {
+                      const isSelected = bookingSizeTier === tier.id;
+                      return (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          onClick={() => setBookingSizeTier(tier.id)}
+                          className={`py-2 px-2 rounded-xl text-[11px] font-extrabold border transition text-center ${
+                            isSelected
+                              ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div>{tier.label}</div>
+                          <div className="text-[10px] opacity-80 mt-0.5">
+                            {tier.extraFee === 0
+                              ? '기본가'
+                              : `+${tier.extraFee.toLocaleString('ko-KR')}원`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div>
@@ -2279,6 +2685,8 @@ export default function App() {
                   <div className="space-y-2">
                     {modalServices.map((svc, idx) => {
                       const active = selectedServiceIdx === idx;
+                      const svcBase = parsePriceNumber(svc.price, 50000);
+                      const svcWithTier = svcBase + activeTierObj.extraFee;
                       return (
                         <div
                           key={idx}
@@ -2291,13 +2699,26 @@ export default function App() {
                         >
                           <div>
                             <p className="text-xs font-extrabold text-gray-900">{svc.name}</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">⏱️ 소요 시간: 1시간 30분</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5">
+                              기본 {formatKrw(svcBase)} · {activeTierObj.shortLabel} 적용
+                            </p>
                           </div>
-                          <span className="text-xs font-black text-orange-600">{svc.price}</span>
+                          <span className="text-xs font-black text-orange-600">
+                            {formatKrw(svcWithTier)}
+                          </span>
                         </div>
                       );
                     })}
                   </div>
+                </div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex justify-between items-center">
+                  <span className="text-xs font-extrabold text-gray-700">
+                    예상 미용 비용 ({activeTierObj.shortLabel})
+                  </span>
+                  <span className="text-sm font-black text-orange-600">
+                    {formatKrw(estimatedTotalPrice)}
+                  </span>
                 </div>
 
                 <div>
@@ -2361,7 +2782,7 @@ export default function App() {
           </div>
         )}
 
-        {/* [모달 2] 매장 보호자 후기 전체 보기 모달 (사진 · 사장님 답글 · 본인 리뷰 삭제 포함) */}
+        {/* [모달 2] 매장 보호자 후기 전체 보기 모달 (이름 마스킹 · 가리기 안내 · 사진 · 사장님 답글 · 본인 리뷰 삭제 포함) */}
         {activeReviewsShop && (
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[10000]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[85vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
@@ -2387,6 +2808,8 @@ export default function App() {
                 {activeReviewsShop.shopReviews && activeReviewsShop.shopReviews.length > 0 ? (
                   activeReviewsShop.shopReviews.map((rev, idx) => {
                     const isMine = rev.customerId && rev.customerId === user.uid;
+                    const isHidden = Boolean(rev.hidden);
+                    const maskedName = maskCustomerName(rev.customerName);
                     return (
                       <div
                         key={rev.id || idx}
@@ -2412,20 +2835,28 @@ export default function App() {
                           </div>
                         </div>
 
-                        <p className="text-xs text-gray-800 leading-relaxed font-medium">
-                          {rev.comment}
-                        </p>
+                        {isHidden ? (
+                          <div className="bg-gray-100 border border-gray-200 text-gray-500 text-xs font-semibold p-3 rounded-xl">
+                            🙈 {BLIND_REVIEW_MESSAGE}
+                          </div>
+                        ) : (
+                          <>
+                            <p className="text-xs text-gray-800 leading-relaxed font-medium">
+                              {rev.comment}
+                            </p>
 
-                        {rev.photoUrl && (
-                          <img
-                            src={rev.photoUrl}
-                            alt="보호자 첨부 후기 사진"
-                            className="w-full max-h-52 object-cover rounded-xl border border-gray-200"
-                          />
+                            {rev.photoUrl && (
+                              <img
+                                src={rev.photoUrl}
+                                alt="보호자 첨부 후기 사진"
+                                className="w-full max-h-52 object-cover rounded-xl border border-gray-200"
+                              />
+                            )}
+                          </>
                         )}
 
                         <p className="text-[11px] text-gray-500 font-bold">
-                          👤 {rev.customerName} 보호자님 {rev.pet ? `· ${rev.pet}` : ''}
+                          👤 {maskedName} 보호자님 {rev.pet ? `· ${rev.pet}` : ''}
                         </p>
 
                         {rev.ownerReply && (
@@ -2479,6 +2910,13 @@ export default function App() {
                 <h3 className="font-black text-gray-900 text-base">⭐ 미용 후기 남기기</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {reviewModalBooking.shop} · {reviewModalBooking.pet}
+                </p>
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  후기 작성 시 보호자 이름은{' '}
+                  <span className="font-bold text-gray-600">
+                    {maskCustomerName(userProfile?.name || '보호자')}
+                  </span>
+                  님으로 표시됩니다.
                 </p>
               </div>
 
@@ -2558,7 +2996,8 @@ export default function App() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 bg-amber-500 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
+                  disabled={uploadingPhoto}
+                  className="flex-1 bg-amber-500 disabled:bg-amber-300 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
                 >
                   후기 등록
                 </button>
@@ -2566,6 +3005,9 @@ export default function App() {
             </form>
           </div>
         )}
+
+        {renderNotiModal()}
+        {renderLiveToast()}
       </div>
     );
   }
@@ -2597,12 +3039,26 @@ export default function App() {
             <h2 className="font-extrabold text-white text-sm mt-0.5">{userProfile.extraInfo}</h2>
           </div>
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl font-bold transition"
-        >
-          로그아웃
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => setShowNotiModal(true)}
+            className="relative text-xs bg-slate-800 hover:bg-slate-700 text-orange-300 px-3 py-1.5 rounded-xl font-extrabold border border-slate-700 transition"
+          >
+            🔔 알림
+            {unreadNotiCount > 0 && (
+              <span className="ml-1 bg-rose-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                {unreadNotiCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={handleLogout}
+            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-xl font-bold transition"
+          >
+            로그아웃
+          </button>
+        </div>
       </header>
 
       <div className="bg-slate-950 border-b border-slate-800 sticky top-[57px] z-10 shadow-sm">
@@ -2714,7 +3170,7 @@ export default function App() {
                         🐾 대상 아이: <span className="font-bold text-white">{item.pet}</span>
                       </p>
                       <p className="text-orange-400 font-semibold">
-                        ✂️ 선택 메뉴: {item.service || '기본 미용'}
+                        ✂️ 선택 메뉴/비용: {item.service || '기본 미용'}
                       </p>
                       {item.styleDetail && (
                         <p className="text-amber-300 font-medium">
@@ -2920,7 +3376,7 @@ export default function App() {
               <div>
                 <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요.
+                  1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요. (소형 기본 / 중형 +15,000원 / 대형 +30,000원 자동 적용)
                 </p>
               </div>
 
@@ -3030,7 +3486,7 @@ export default function App() {
 
               <div className="space-y-2 pt-1">
                 <label className="block text-xs font-bold text-orange-400">
-                  ✂️ 1시간 30분 대표 코스 3종
+                  ✂️ 1시간 30분 대표 코스 3종 (소형 기준 기본가)
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <input
@@ -3090,7 +3546,7 @@ export default function App() {
               </button>
             </form>
 
-            {/* 우리 매장 보호자 후기 관리 (사진 확인 · 답글 작성 · 리뷰 삭제) */}
+            {/* 우리 매장 보호자 후기 관리 (가리기 · 답글 · 삭제) */}
             <div className="bg-slate-800 p-5 rounded-3xl border border-slate-700/60 space-y-3">
               <h4 className="font-black text-white text-sm">
                 ⭐ 우리 매장 보호자 후기 ({myShopReviews.length}건)
@@ -3098,87 +3554,121 @@ export default function App() {
               {myShopReviews.length === 0 ? (
                 <p className="text-xs text-slate-400">아직 등록된 보호자 후기가 없습니다.</p>
               ) : (
-                myShopReviews.map((rev) => (
-                  <div
-                    key={rev.id}
-                    className="bg-slate-900 p-4 rounded-2xl border border-slate-800 text-xs space-y-2.5"
-                  >
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-amber-400">
-                        {'⭐'.repeat(rev.rating)} ({rev.rating}점)
-                      </span>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-slate-400">{rev.customerName} 보호자님</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteReview(rev)}
-                          className="text-[11px] text-rose-400 hover:underline font-bold"
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </div>
-
-                    <p className="text-slate-200 leading-relaxed">{rev.comment}</p>
-
-                    {rev.photoUrl && (
-                      <img
-                        src={rev.photoUrl}
-                        alt="후기 사진"
-                        className="w-full max-h-48 object-cover rounded-xl border border-slate-700"
-                      />
-                    )}
-
-                    {rev.ownerReply && replyingReviewId !== rev.id && (
-                      <div className="bg-slate-800/90 border border-orange-500/30 p-3 rounded-xl space-y-1">
-                        <p className="text-[11px] font-black text-orange-400">✂️ 내 사장님 답글</p>
-                        <p className="text-slate-200">{rev.ownerReply}</p>
-                      </div>
-                    )}
-
-                    {replyingReviewId === rev.id ? (
-                      <div className="space-y-2 pt-1">
-                        <textarea
-                          rows="2"
-                          placeholder="보호자님께 감사 인사와 케어 코멘트를 남겨주세요."
-                          value={replyDraftText}
-                          onChange={(e) => setReplyDraftText(e.target.value)}
-                          className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none resize-none"
-                        />
-                        <div className="flex space-x-2">
+                myShopReviews.map((rev) => {
+                  const isHidden = Boolean(rev.hidden);
+                  return (
+                    <div
+                      key={rev.id}
+                      className={`p-4 rounded-2xl border text-xs space-y-2.5 ${
+                        isHidden
+                          ? 'bg-slate-950/80 border-amber-500/40'
+                          : 'bg-slate-900 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-amber-400">
+                            {'⭐'.repeat(rev.rating)} ({rev.rating}점)
+                          </span>
+                          {isHidden && (
+                            <span className="text-[10px] bg-amber-900/60 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                              가리기 중
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-slate-400">
+                            {maskCustomerName(rev.customerName)} 보호자님
+                          </span>
                           <button
                             type="button"
-                            onClick={() => {
-                              setReplyingReviewId(null);
-                              setReplyDraftText('');
-                            }}
-                            className="flex-1 bg-slate-700 text-slate-300 py-2 rounded-xl text-xs font-bold"
+                            onClick={() => handleDeleteReview(rev)}
+                            className="text-[11px] text-rose-400 hover:underline font-bold"
                           >
-                            취소
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveOwnerReply(rev.id)}
-                            className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-xs font-bold"
-                          >
-                            답글 저장
+                            삭제
                           </button>
                         </div>
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReplyingReviewId(rev.id);
-                          setReplyDraftText(rev.ownerReply || '');
-                        }}
-                        className="bg-slate-800 hover:bg-slate-700 text-orange-300 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-bold transition"
-                      >
-                        {rev.ownerReply ? '✏️ 답글 수정하기' : '💬 사장님 답글 달기'}
-                      </button>
-                    )}
-                  </div>
-                ))
+
+                      <p className="text-slate-200 leading-relaxed">{rev.comment}</p>
+                      {isHidden && (
+                        <p className="text-[11px] text-amber-300/90 bg-amber-950/50 px-2.5 py-1.5 rounded-lg">
+                          보호자 화면 노출 문구: "{BLIND_REVIEW_MESSAGE}"
+                        </p>
+                      )}
+
+                      {rev.photoUrl && (
+                        <img
+                          src={rev.photoUrl}
+                          alt="후기 사진"
+                          className="w-full max-h-48 object-cover rounded-xl border border-slate-700"
+                        />
+                      )}
+
+                      {rev.ownerReply && replyingReviewId !== rev.id && (
+                        <div className="bg-slate-800/90 border border-orange-500/30 p-3 rounded-xl space-y-1">
+                          <p className="text-[11px] font-black text-orange-400">✂️ 내 사장님 답글</p>
+                          <p className="text-slate-200">{rev.ownerReply}</p>
+                        </div>
+                      )}
+
+                      {replyingReviewId === rev.id ? (
+                        <div className="space-y-2 pt-1">
+                          <textarea
+                            rows="2"
+                            placeholder="보호자님께 감사 인사와 케어 코멘트를 남겨주세요."
+                            value={replyDraftText}
+                            onChange={(e) => setReplyDraftText(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-xs text-white focus:outline-none resize-none"
+                          />
+                          <div className="flex space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplyingReviewId(null);
+                                setReplyDraftText('');
+                              }}
+                              className="flex-1 bg-slate-700 text-slate-300 py-2 rounded-xl text-xs font-bold"
+                            >
+                              취소
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveOwnerReply(rev.id)}
+                              className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-xl text-xs font-bold"
+                            >
+                              답글 저장
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingReviewId(rev.id);
+                              setReplyDraftText(rev.ownerReply || '');
+                            }}
+                            className="bg-slate-800 hover:bg-slate-700 text-orange-300 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-bold transition"
+                          >
+                            {rev.ownerReply ? '✏️ 답글 수정하기' : '💬 사장님 답글 달기'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleHideReview(rev)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold border transition ${
+                              isHidden
+                                ? 'bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border-emerald-700/60'
+                                : 'bg-amber-950/60 hover:bg-amber-900/60 text-amber-300 border-amber-700/60'
+                            }`}
+                          >
+                            {isHidden ? '👁️ 가리기 해제' : '🙈 가리기 처리'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -3258,6 +3748,9 @@ export default function App() {
           </form>
         </div>
       )}
+
+      {renderNotiModal()}
+      {renderLiveToast()}
     </div>
   );
 }

@@ -24,7 +24,158 @@ import {
 } from 'firebase/firestore';
 
 const BLIND_REVIEW_MESSAGE = '해당 후기는 비방성/욕설로 인하여 가리기 처리되었습니다.';
-const MAX_COMPRESSED_DATA_URL_CHARS = 700000; // Firestore 1MB 문서 한도 안전선
+const MAX_COMPRESSED_DATA_URL_CHARS = 650000; // Firestore 1MB 문서 한도 안전선
+
+// 매장 안심 시설 태그 목록
+const FACILITY_TAGS = [
+  { id: 'oneOnOne', label: '100% 1:1 케어' },
+  { id: 'cctv', label: 'CCTV 열람' },
+  { id: 'separated', label: '멍냥 완전분리' },
+  { id: 'senior', label: '노령견 전문' },
+  { id: 'parking', label: '주차 가능' },
+];
+
+// 털 엉킴 사전 안내 옵션
+const MATTING_OPTIONS = [
+  { id: 'none', label: '엉킴 없음', extraFee: 0, desc: '추가 요금 없음' },
+  { id: 'light', label: '약간 엉킴', extraFee: 10000, desc: '현장 확인 후 +10,000원 예상' },
+  { id: 'heavy', label: '심한 엉킴', extraFee: 20000, desc: '현장 확인 후 +20,000원 예상' },
+];
+
+// 미용 스타일별 예시 정보 (외부 이미지 링크 오류 방지를 위해 자체 SVG 일러스트 활용)
+const STYLE_PRESETS_BY_SPECIES = {
+  dog: [
+    {
+      name: '얼굴 동그랗게 (곰돌이컷)',
+      caption: '둥근 머즐 라인',
+      bg: '#fff7ed',
+      stroke: '#ea580c',
+      accent: '#fdba74',
+      mode: 'teddy',
+    },
+    {
+      name: '전체 가위컷 (스포팅)',
+      caption: '몸통 여유·다리 볼륨',
+      bg: '#fefce8',
+      stroke: '#ca8a04',
+      accent: '#fde047',
+      mode: 'sporting',
+    },
+    {
+      name: '깔끔 클리핑 (3mm/6mm)',
+      caption: '균일한 짧은 털 관리',
+      bg: '#f0fdf4',
+      stroke: '#16a34a',
+      accent: '#86efac',
+      mode: 'clipping',
+    },
+    {
+      name: '위생·목욕 중심 (최소 컷)',
+      caption: '발바닥·항문·배 위생',
+      bg: '#eff6ff',
+      stroke: '#2563eb',
+      accent: '#93c5fd',
+      mode: 'hygiene',
+    },
+  ],
+  cat: [
+    {
+      name: '무마취 전체 클리핑 (사자컷/올빡)',
+      caption: '갈기/꼬리 포인트 또는 전체 정리',
+      bg: '#faf5ff',
+      stroke: '#7e22ce',
+      accent: '#d8b4fe',
+      mode: 'lion',
+    },
+    {
+      name: '장모종 엉킴 제거 + 썸머컷',
+      caption: '복부·겨드랑이 뭉침 완화',
+      bg: '#fdf4ff',
+      stroke: '#a21caf',
+      accent: '#f0abfc',
+      mode: 'summer',
+    },
+    {
+      name: '저자극 목욕 + 죽은털(언더코트) 케어',
+      caption: '털빠짐 감소·보습 진정',
+      bg: '#f0f9ff',
+      stroke: '#0284c7',
+      accent: '#7dd3fc',
+      mode: 'bath',
+    },
+    {
+      name: '위생미용 + 발톱·귀 집중 관리',
+      caption: '빠른 시간 저스트레스 케어',
+      bg: '#f5f3ff',
+      stroke: '#5b21b6',
+      accent: '#c4b5fd',
+      mode: 'catHygiene',
+    },
+  ],
+};
+
+function StylePreviewThumb({ species, mode, bg, stroke, accent }) {
+  return (
+    <div
+      style={{ backgroundColor: bg }}
+      className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 border border-black/5"
+    >
+      <svg viewBox="0 0 48 48" className="w-9 h-9" fill="none" aria-hidden="true">
+        {species === 'dog' ? (
+          <>
+            <ellipse cx="13" cy="21" rx="4.5" ry="8" fill={accent} stroke={stroke} strokeWidth="2" />
+            <ellipse cx="35" cy="21" rx="4.5" ry="8" fill={accent} stroke={stroke} strokeWidth="2" />
+            <circle
+              cx="24"
+              cy="24"
+              r={mode === 'teddy' ? '12.5' : '11'}
+              fill="#ffffff"
+              stroke={stroke}
+              strokeWidth="2.2"
+            />
+            {mode === 'sporting' && (
+              <path d="M15 35c3 4 15 4 18 0" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" />
+            )}
+            {mode === 'clipping' && (
+              <path d="M16 14h16" stroke={stroke} strokeWidth="2" strokeDasharray="3 2" />
+            )}
+            {mode === 'hygiene' && (
+              <circle cx="37" cy="13" r="4" fill={accent} stroke={stroke} strokeWidth="1.6" />
+            )}
+            <circle cx="20" cy="23" r="1.7" fill={stroke} />
+            <circle cx="28" cy="23" r="1.7" fill={stroke} />
+            <ellipse cx="24" cy="27" rx="2.4" ry="1.7" fill={stroke} />
+            <path d="M21.5 30.2c1.2 1.4 3.8 1.4 5 0" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" />
+          </>
+        ) : (
+          <>
+            <polygon points="14,17 17,8 22,15" fill={accent} stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+            <polygon points="34,17 31,8 26,15" fill={accent} stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+            <ellipse
+              cx="24"
+              cy="25"
+              rx={mode === 'lion' ? '13.5' : '12'}
+              ry={mode === 'lion' ? '12' : '10.5'}
+              fill="#ffffff"
+              stroke={stroke}
+              strokeWidth="2.2"
+            />
+            {mode === 'bath' && (
+              <>
+                <circle cx="36" cy="12" r="2.6" fill={accent} stroke={stroke} strokeWidth="1.5" />
+                <circle cx="40" cy="17" r="1.8" fill={accent} stroke={stroke} strokeWidth="1.5" />
+              </>
+            )}
+            <circle cx="19.5" cy="24" r="1.7" fill={stroke} />
+            <circle cx="28.5" cy="24" r="1.7" fill={stroke} />
+            <polygon points="24,26.5 22,28.8 26,28.8" fill={stroke} />
+            <path d="M13 26.5h4.5M30.5 26.5H35M13.5 29.5h4M30.5 29.5h4" stroke={stroke} strokeWidth="1.5" strokeLinecap="round" />
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
 
 // 보호자 이름 가운데 마스킹 (예: 홍길동 -> 홍*동, 홍길 -> 홍*, 남궁민수 -> 남궁*수)
 function maskCustomerName(rawName) {
@@ -78,7 +229,19 @@ function formatKrw(amount) {
   return `${Number(amount || 0).toLocaleString('ko-KR')}원`;
 }
 
-// 기본 제휴 미용실 (1시간 30분 단위 타임슬롯 + 샘플 후기/답글 포함)
+function getDaysSinceDate(dateStr) {
+  if (!dateStr) return null;
+  const normalized = String(dateStr)
+    .trim()
+    .replace(/\.\s*/g, '-')
+    .replace(/-$/, '');
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const diffMs = Date.now() - parsed.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+// 기본 제휴 미용실 (시설 태그 + 타임슬롯 + 샘플 후기/답글 포함)
 const DEFAULT_SHOPS = [
   {
     id: 'default-1',
@@ -88,6 +251,7 @@ const DEFAULT_SHOPS = [
     district: '남동구 구월동',
     desc: '강아지 스파/가위컷 전문 · 100% 예약제',
     price: '45,000원~',
+    facilityTags: ['oneOnOne', 'cctv', 'parking'],
     baseRating: 4.9,
     baseReviewCount: 2,
     defaultReviews: [
@@ -132,6 +296,7 @@ const DEFAULT_SHOPS = [
     district: '마포구 연남동',
     desc: '고양이 전문 무마취 미용 · 강아지 출입 분리',
     price: '60,000원~',
+    facilityTags: ['oneOnOne', 'separated', 'cctv'],
     baseRating: 4.9,
     baseReviewCount: 2,
     defaultReviews: [
@@ -176,6 +341,7 @@ const DEFAULT_SHOPS = [
     district: '연수구 송도동',
     desc: '강아지·고양이 분리 묘실 운영 · 노령 반려동물 전문',
     price: '55,000원~',
+    facilityTags: ['oneOnOne', 'separated', 'senior', 'parking'],
     baseRating: 4.9,
     baseReviewCount: 2,
     defaultReviews: [
@@ -219,6 +385,7 @@ const DEFAULT_SHOPS = [
     district: '강남구 신사동',
     desc: '강아지 스포팅 & 고양이 전담 핸들러 상주',
     price: '65,000원~',
+    facilityTags: ['cctv', 'separated', 'parking'],
     baseRating: 4.8,
     baseReviewCount: 1,
     defaultReviews: [
@@ -251,6 +418,7 @@ const DEFAULT_SHOPS = [
     district: '성남시 분당구',
     desc: '100% 고양이 전용 예약제 · 호르몬 디퓨저 케어',
     price: '60,000원~',
+    facilityTags: ['oneOnOne', 'separated', 'cctv', 'parking'],
     baseRating: 5.0,
     baseReviewCount: 1,
     defaultReviews: [
@@ -308,7 +476,7 @@ function getPetTypeBadge(petType) {
   return { label: '🐶 강아지 전문', bg: 'bg-amber-100 text-amber-800', icon: '🐶', color: '#f97316' };
 }
 
-// 후기 사진 안전 리사이징 및 압축 (Firestore 1MB 한도 초과 방지)
+// 사진 안전 리사이징 및 압축 (Firestore 1MB 한도 초과 방지)
 function renderCompressedDataUrl(img, maxWidth, quality) {
   const scale = img.width > maxWidth ? maxWidth / img.width : 1;
   const width = Math.max(1, Math.round(img.width * scale));
@@ -330,9 +498,9 @@ function compressImageFile(file) {
     img.onload = () => {
       URL.revokeObjectURL(objectUrl);
       const attempts = [
-        [480, 0.62],
-        [380, 0.52],
-        [300, 0.45],
+        [460, 0.6],
+        [360, 0.5],
+        [280, 0.42],
       ];
       let resultUrl = '';
       for (const [w, q] of attempts) {
@@ -523,12 +691,15 @@ export default function App() {
   const seenNotiIdsRef = useRef(new Set());
   const initialNotiLoadedRef = useRef(false);
 
-  // 보호자 화면 탭 & 검색 & 지도 상태
+  // 보호자 화면 탭 & 검색 & 필터 & 찜 상태
   const [userTab, setUserTab] = useState('search');
   const [viewMode, setViewMode] = useState('map');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRegion, setSelectedRegion] = useState('전체');
   const [selectedSpeciesFilter, setSelectedSpeciesFilter] = useState('all');
+  const [selectedFacilityFilter, setSelectedFacilityFilter] = useState('all');
+  const [onlyFavoriteShops, setOnlyFavoriteShops] = useState(false);
+  const [favoriteShopIds, setFavoriteShopIds] = useState([]);
   const [myLocation, setMyLocation] = useState(null);
   const [locationStatus, setLocationStatus] = useState('');
   const [selectedMapShop, setSelectedMapShop] = useState(null);
@@ -542,15 +713,18 @@ export default function App() {
   const [petWeight, setPetWeight] = useState('');
   const [petNote, setPetNote] = useState('');
 
-  // 보호자 상세 예약 모달 상태 (체급별 비용 포함)
+  // 보호자 상세 예약 모달 상태 (체급별 비용 + 털 엉킴 + 희망 참고 사진 포함)
   const [bookingModalShop, setBookingModalShop] = useState(null);
   const [selectedBookingPetId, setSelectedBookingPetId] = useState('');
   const [bookingPetSpecies, setBookingPetSpecies] = useState('dog');
   const [bookingSizeTier, setBookingSizeTier] = useState('small');
+  const [bookingMattingLevel, setBookingMattingLevel] = useState('none');
   const [bookingDate, setBookingDate] = useState('');
   const [bookingTime, setBookingTime] = useState('');
   const [selectedServiceIdx, setSelectedServiceIdx] = useState(0);
   const [customStyleDetail, setCustomStyleDetail] = useState('얼굴 동그랗게 (곰돌이컷)');
+  const [bookingRefPhotoData, setBookingRefPhotoData] = useState('');
+  const [uploadingRefPhoto, setUploadingRefPhoto] = useState(false);
   const [bookingNote, setBookingNote] = useState('');
 
   // 매장 후기 전체 보기 모달 상태
@@ -576,6 +750,7 @@ export default function App() {
   const [shopDistrict, setShopDistrict] = useState('');
   const [shopDesc, setShopDesc] = useState('');
   const [shopPrice, setShopPrice] = useState('50,000원~');
+  const [shopFacilityTags, setShopFacilityTags] = useState(['oneOnOne', 'cctv']);
   const [shopTimeSlotsInput, setShopTimeSlotsInput] = useState(
     '10:00, 11:30, 13:00, 14:30, 16:00, 17:30'
   );
@@ -593,10 +768,12 @@ export default function App() {
   const [blockTimeSlot, setBlockTimeSlot] = useState('13:00');
   const [blockReason, setBlockReason] = useState('점심시간 / 휴게');
 
-  // 사장님 미용 완료 케어 일지 모달 상태
+  // 사장님 미용 완료 케어 일지 모달 상태 (미용 완료 사진 포함)
   const [careModalBooking, setCareModalBooking] = useState(null);
   const [careCondition, setCareCondition] = useState('컨디션 좋음 · 협조적');
   const [careNoteInput, setCareNoteInput] = useState('');
+  const [carePhotoData, setCarePhotoData] = useState('');
+  const [uploadingCarePhoto, setUploadingCarePhoto] = useState(false);
 
   const detectMyLocation = (showAlert = false) => {
     if (!navigator.geolocation) {
@@ -682,6 +859,7 @@ export default function App() {
               ];
             }
             setPetsList(loadedPets);
+            setFavoriteShopIds(Array.isArray(data.favoriteShops) ? data.favoriteShops : []);
             detectMyLocation(false);
           } else if (data.role === 'owner') {
             setOwnerNameInput(data.name || '');
@@ -695,6 +873,9 @@ export default function App() {
               setShopDistrict(sData.district || '');
               setShopDesc(sData.desc || '');
               setShopPrice(sData.price || '50,000원~');
+              setShopFacilityTags(
+                Array.isArray(sData.facilityTags) ? sData.facilityTags : ['oneOnOne', 'cctv']
+              );
               if (sData.timeSlots && sData.timeSlots.length > 0) {
                 setShopTimeSlotsInput(sData.timeSlots.join(', '));
               }
@@ -713,6 +894,7 @@ export default function App() {
         setUser(null);
         setUserProfile(null);
         setPetsList([]);
+        setFavoriteShopIds([]);
         setNotifications([]);
         initialNotiLoadedRef.current = false;
         seenNotiIdsRef.current = new Set();
@@ -804,6 +986,23 @@ export default function App() {
     }
   };
 
+  // 단골 매장 찜하기 토글
+  const handleToggleFavoriteShop = async (shopId) => {
+    if (!user || !shopId) return;
+    const exists = favoriteShopIds.includes(shopId);
+    const updated = exists
+      ? favoriteShopIds.filter((id) => id !== shopId)
+      : [...favoriteShopIds, shopId];
+    setFavoriteShopIds(updated);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        favoriteShops: updated,
+      });
+    } catch (err) {
+      console.error('찜 저장 실패:', err);
+    }
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     try {
@@ -830,12 +1029,14 @@ export default function App() {
           role,
           extraInfo: extraInfo || (role === 'user' ? defaultLabel : '포포 제휴 미용실'),
           pets: firstPet,
+          favoriteShops: [],
           createdAt: serverTimestamp(),
         };
         await setDoc(doc(db, 'users', res.user.uid), profileData);
         setUserProfile(profileData);
         if (role === 'user') {
           setPetsList(firstPet);
+          setFavoriteShopIds([]);
           detectMyLocation(false);
         } else {
           setOwnerNameInput(name || '사장님');
@@ -854,7 +1055,8 @@ export default function App() {
     await signOut(auth);
   };
 
-  const openShopBookingModal = (shop) => {
+  // 예약 모달 열기 (일반 예약 또는 이전 스타일 그대로 재예약)
+  const openShopBookingModal = (shop, presetBooking = null) => {
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
     const compatiblePets = petsList.filter((p) => {
@@ -863,34 +1065,61 @@ export default function App() {
       return true;
     });
 
-    const chosenPet = compatiblePets[0] || petsList[0] || null;
-    const initialSpecies = chosenPet
-      ? chosenPet.petSpecies
-      : shop.petType === 'cat'
-      ? 'cat'
-      : 'dog';
-    const inferredTier = chosenPet ? getSizeTierByWeight(chosenPet.petWeight) : 'small';
+    const presetPet =
+      presetBooking?.petId ? petsList.find((p) => p.id === presetBooking.petId) : null;
+    const chosenPet = presetPet || compatiblePets[0] || petsList[0] || null;
+    const initialSpecies =
+      presetBooking?.petSpecies ||
+      (chosenPet ? chosenPet.petSpecies : shop.petType === 'cat' ? 'cat' : 'dog');
+    const inferredTier =
+      presetBooking?.sizeTier ||
+      (chosenPet ? getSizeTierByWeight(chosenPet.petWeight) : 'small');
+    const defaultStyle =
+      presetBooking?.styleDetail || STYLE_PRESETS_BY_SPECIES[initialSpecies]?.[0]?.name || '';
 
     setBookingModalShop(shop);
     setSelectedBookingPetId(chosenPet ? chosenPet.id : 'manual');
     setBookingPetSpecies(initialSpecies);
     setBookingSizeTier(inferredTier);
+    setBookingMattingLevel(presetBooking?.mattingLevel || 'none');
     setBookingDate(tomorrow);
     setBookingTime('');
-    setSelectedServiceIdx(0);
-    setCustomStyleDetail(
-      initialSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
+    setSelectedServiceIdx(
+      typeof presetBooking?.serviceIdx === 'number' ? presetBooking.serviceIdx : 0
     );
-    setBookingNote('');
+    setCustomStyleDetail(defaultStyle);
+    setBookingRefPhotoData(presetBooking?.referencePhotoUrl || '');
+    setBookingNote(
+      presetBooking?.requestNote && presetBooking.requestNote !== '없음'
+        ? presetBooking.requestNote
+        : ''
+    );
   };
 
   const handleSelectPetForBooking = (pet) => {
     setSelectedBookingPetId(pet.id);
     setBookingPetSpecies(pet.petSpecies);
     setBookingSizeTier(getSizeTierByWeight(pet.petWeight));
-    setCustomStyleDetail(
-      pet.petSpecies === 'cat' ? '무마취 전체 클리핑 (사자컷/올빡)' : '얼굴 동그랗게 (곰돌이컷)'
-    );
+    setCustomStyleDetail(STYLE_PRESETS_BY_SPECIES[pet.petSpecies]?.[0]?.name || '');
+  };
+
+  // 예약 시 희망 참고 사진 첨부 핸들러
+  const handleBookingRefPhotoChange = async (e) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
+    if (!file) return;
+
+    setUploadingRefPhoto(true);
+    try {
+      const compressed = await compressImageFile(file);
+      setBookingRefPhotoData(compressed);
+    } catch (err) {
+      alert(err?.message || '참고 사진을 불러오지 못했습니다.');
+      setBookingRefPhotoData('');
+    } finally {
+      setUploadingRefPhoto(false);
+      inputEl.value = '';
+    }
   };
 
   const handleConfirmBooking = async (e) => {
@@ -903,6 +1132,7 @@ export default function App() {
       alert('예약 가능한 시간을 선택해 주세요.');
       return;
     }
+    if (uploadingRefPhoto) return;
 
     const shopServices =
       bookingModalShop.services && bookingModalShop.services.length > 0
@@ -918,7 +1148,9 @@ export default function App() {
     const chosenService = shopServices[selectedServiceIdx] || shopServices[0];
     const baseAmount = parsePriceNumber(chosenService.price, 50000);
     const tierInfo = SIZE_TIERS[bookingSizeTier] || SIZE_TIERS.small;
-    const totalAmount = baseAmount + tierInfo.extraFee;
+    const mattingInfo =
+      MATTING_OPTIONS.find((m) => m.id === bookingMattingLevel) || MATTING_OPTIONS[0];
+    const totalAmount = baseAmount + tierInfo.extraFee + mattingInfo.extraFee;
 
     const selectedPetObj = petsList.find((p) => p.id === selectedBookingPetId);
     const activeSpecies = selectedPetObj ? selectedPetObj.petSpecies : bookingPetSpecies;
@@ -947,10 +1179,16 @@ export default function App() {
         petSpecies: activeSpecies,
         sizeTier: tierInfo.id,
         sizeTierLabel: tierInfo.label,
+        mattingLevel: mattingInfo.id,
+        mattingLabel: mattingInfo.label,
+        serviceIdx: selectedServiceIdx,
         pet: petSummary,
         petNote: finalPetNote,
-        service: `${chosenService.name} · ${tierInfo.shortLabel} (${formatKrw(totalAmount)})`,
+        service: `${chosenService.name} · ${tierInfo.shortLabel}${
+          mattingInfo.extraFee > 0 ? ` · ${mattingInfo.label}` : ''
+        } (${formatKrw(totalAmount)})`,
         styleDetail: customStyleDetail,
+        referencePhotoUrl: bookingRefPhotoData || '',
         requestNote: bookingNote || '없음',
         bookingDate,
         bookingTime,
@@ -960,7 +1198,7 @@ export default function App() {
         createdAt: serverTimestamp(),
       });
       alert(
-        `"${bookingModalShop.name}" (${bookingDate} ${bookingTime}, ${tierInfo.shortLabel} ${formatKrw(
+        `"${bookingModalShop.name}" (${bookingDate} ${bookingTime}, 예상 ${formatKrw(
           totalAmount
         )}) 예약 신청이 완료되었습니다!`
       );
@@ -1271,17 +1509,39 @@ export default function App() {
     }
   };
 
-  // 사장님: 미용 완료 처리 + 그루머 케어 일지 저장 + 보호자 알림 발송
+  // 사장님: 케어 일지 사진 첨부 핸들러
+  const handleCarePhotoChange = async (e) => {
+    const inputEl = e.target;
+    const file = inputEl.files?.[0];
+    if (!file) return;
+
+    setUploadingCarePhoto(true);
+    try {
+      const compressed = await compressImageFile(file);
+      setCarePhotoData(compressed);
+    } catch (err) {
+      alert(err?.message || '미용 완료 사진을 불러오지 못했습니다.');
+      setCarePhotoData('');
+    } finally {
+      setUploadingCarePhoto(false);
+      inputEl.value = '';
+    }
+  };
+
+  // 사장님: 미용 완료 처리 + 그루머 케어 일지 + 완료 사진 저장 + 보호자 알림 발송
   const handleCompleteWithCareNote = async (e) => {
     e.preventDefault();
-    if (!careModalBooking) return;
+    if (!careModalBooking || uploadingCarePhoto) return;
     const finalCareNote = careNoteInput.trim() || '오늘 미용도 스트레스 없이 얌전히 잘 받았습니다!';
+    const todayIso = new Date().toISOString().split('T')[0];
     try {
       await updateDoc(doc(db, 'bookings', careModalBooking.id), {
         status: '미용 완료',
+        completedDateIso: todayIso,
         careReport: {
           condition: careCondition,
           note: finalCareNote,
+          photoUrl: carePhotoData || '',
           completedAt: new Date().toLocaleDateString('ko-KR'),
         },
       });
@@ -1298,9 +1558,16 @@ export default function App() {
       alert('미용 완료 처리 및 보호자 케어 일지가 전송되었습니다!');
       setCareModalBooking(null);
       setCareNoteInput('');
+      setCarePhotoData('');
     } catch (err) {
       alert('케어 일지 저장 실패: ' + err.message);
     }
+  };
+
+  const toggleShopFacilityTag = (tagId) => {
+    setShopFacilityTags((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
   };
 
   const handleRegisterShop = async (e) => {
@@ -1349,6 +1616,7 @@ export default function App() {
         district: shopDistrict || '중심가',
         desc: shopDesc || '정성껏 케어하는 강아지·고양이 전문 미용실',
         price: shopSvc2Price || shopPrice || '50,000원~',
+        facilityTags: shopFacilityTags,
         lat: existingShop?.lat || baseCoord.lat + randomOffsetLat,
         lng: existingShop?.lng || baseCoord.lng + randomOffsetLng,
         timeSlots:
@@ -1660,6 +1928,7 @@ export default function App() {
       return {
         ...shop,
         petType: shop.petType || 'dog',
+        facilityTags: Array.isArray(shop.facilityTags) ? shop.facilityTags : [],
         avgRating,
         totalReviews,
         shopReviews: mergedReviews,
@@ -1675,6 +1944,26 @@ export default function App() {
 
     const myBookings = bookings.filter((b) => b.customerId === user.uid);
 
+    // 아이별 마지막 미용 완료 경과일 계산 (30일 이상 경과 시 리마인드 배지)
+    const petCycleReminders = petsList
+      .map((pet) => {
+        const completedForPet = myBookings.filter(
+          (b) =>
+            b.status === '미용 완료' &&
+            (b.petId === pet.id || (b.pet && b.pet.includes(pet.petName)))
+        );
+        if (completedForPet.length === 0) return null;
+        const latest = completedForPet[0];
+        const dateBase =
+          latest.completedDateIso || latest.careReport?.completedAt || latest.bookingDate;
+        const days = getDaysSinceDate(dateBase);
+        if (days !== null && days >= 30) {
+          return { pet, days, lastShopId: latest.shopId, lastBooking: latest };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
     const filteredShops = allShops
       .filter((shop) => {
         const matchesRegion = selectedRegion === '전체' || shop.region === selectedRegion;
@@ -1682,12 +1971,23 @@ export default function App() {
           selectedSpeciesFilter === 'all' ||
           shop.petType === 'both' ||
           shop.petType === selectedSpeciesFilter;
+        const matchesFacility =
+          selectedFacilityFilter === 'all' ||
+          shop.facilityTags.includes(selectedFacilityFilter);
+        const matchesFavorite =
+          !onlyFavoriteShops || favoriteShopIds.includes(shop.id);
         const keyword = searchTerm.toLowerCase();
         const matchesSearch =
           shop.name.toLowerCase().includes(keyword) ||
           (shop.district && shop.district.toLowerCase().includes(keyword)) ||
           (shop.desc && shop.desc.toLowerCase().includes(keyword));
-        return matchesRegion && matchesSpecies && matchesSearch;
+        return (
+          matchesRegion &&
+          matchesSpecies &&
+          matchesFacility &&
+          matchesFavorite &&
+          matchesSearch
+        );
       })
       .sort((a, b) => {
         if (a.distanceKm && b.distanceKm) {
@@ -1715,7 +2015,10 @@ export default function App() {
     const activeServiceObj = modalServices[selectedServiceIdx] || modalServices[0];
     const activeBasePrice = parsePriceNumber(activeServiceObj?.price, 50000);
     const activeTierObj = SIZE_TIERS[bookingSizeTier] || SIZE_TIERS.small;
-    const estimatedTotalPrice = activeBasePrice + activeTierObj.extraFee;
+    const activeMattingObj =
+      MATTING_OPTIONS.find((m) => m.id === bookingMattingLevel) || MATTING_OPTIONS[0];
+    const estimatedTotalPrice =
+      activeBasePrice + activeTierObj.extraFee + activeMattingObj.extraFee;
 
     const bookedTimesForShopAndDate = bookingModalShop
       ? bookings
@@ -1741,21 +2044,8 @@ export default function App() {
       .map((blk) => blk.timeSlot);
 
     const todayStr = new Date().toISOString().split('T')[0];
-
-    const styleOptionsBySpecies =
-      bookingPetSpecies === 'cat'
-        ? [
-            '무마취 전체 클리핑 (사자컷/올빡)',
-            '장모종 엉킴 제거 + 썸머컷',
-            '저자극 목욕 + 죽은털(언더코트) 케어',
-            '위생미용 + 발톱·귀 집중 관리',
-          ]
-        : [
-            '얼굴 동그랗게 (곰돌이컷)',
-            '전체 가위컷 (스포팅)',
-            '깔끔 클리핑 (3mm/6mm)',
-            '위생·목욕 중심 (최소 컷)',
-          ];
+    const stylePresetsBySpecies =
+      STYLE_PRESETS_BY_SPECIES[bookingPetSpecies] || STYLE_PRESETS_BY_SPECIES.dog;
 
     const isAnyModalOpen = Boolean(
       bookingModalShop || reviewModalBooking || activeReviewsShop || showNotiModal
@@ -1768,7 +2058,7 @@ export default function App() {
             <div className="bg-orange-100 text-orange-600 p-1.5 rounded-xl text-base shadow-sm">🐾</div>
             <div>
               <p className="text-[11px] text-gray-400 font-bold leading-none">
-                반려동물 {petsList.length}마리 등록됨
+                반려동물 {petsList.length}마리 · 단골 {favoriteShopIds.length}곳
               </p>
               <h2 className="font-extrabold text-gray-800 text-sm mt-0.5">{userProfile.name}님</h2>
             </div>
@@ -1836,6 +2126,34 @@ export default function App() {
         <main className="max-w-md mx-auto p-4 space-y-4">
           {userTab === 'search' && (
             <>
+              {/* 미용 주기 리마인드 배너 (30일 경과 아이 있을 때 노출) */}
+              {petCycleReminders.length > 0 && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-200 p-3.5 rounded-2xl flex items-center justify-between gap-2">
+                  <div className="text-xs space-y-0.5">
+                    <p className="font-black text-orange-800">
+                      ⏰ {petCycleReminders[0].pet.petName} 미용 주기 알림 ({petCycleReminders[0].days}일 경과)
+                    </p>
+                    <p className="text-[11px] text-gray-600">
+                      털 엉킴 방지와 위생 관리를 위해 재예약할 시점이에요!
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetShop =
+                        allShops.find((s) => s.id === petCycleReminders[0].lastShopId) ||
+                        allShops[0];
+                      if (targetShop) {
+                        openShopBookingModal(targetShop, petCycleReminders[0].lastBooking);
+                      }
+                    }}
+                    className="shrink-0 bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-extrabold px-3 py-2 rounded-xl shadow-sm"
+                  >
+                    바로 재예약
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
                 {[
                   { id: 'all', label: '🐾 전체 미용실' },
@@ -1873,6 +2191,48 @@ export default function App() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full bg-white border border-gray-200 rounded-2xl pl-10 pr-4 py-3 text-sm shadow-sm focus:border-orange-500 focus:outline-none transition"
                   />
+                </div>
+
+                {/* 안심 시설 태그 & 단골 찜 필터 */}
+                <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setOnlyFavoriteShops((prev) => !prev)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-extrabold border transition ${
+                      onlyFavoriteShops
+                        ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                        : 'bg-white text-rose-600 border-rose-200 hover:bg-rose-50'
+                    }`}
+                  >
+                    ♥ 단골 찜 ({favoriteShopIds.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFacilityFilter('all')}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${
+                      selectedFacilityFilter === 'all'
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-gray-600 border-gray-200'
+                    }`}
+                  >
+                    전체 시설
+                  </button>
+                  {FACILITY_TAGS.map((tag) => (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() =>
+                        setSelectedFacilityFilter((prev) => (prev === tag.id ? 'all' : tag.id))
+                      }
+                      className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${
+                        selectedFacilityFilter === tag.id
+                          ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'
+                      }`}
+                    >
+                      #{tag.label}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="flex items-center justify-between gap-2">
@@ -1958,8 +2318,34 @@ export default function App() {
                             </span>
                           )}
                         </div>
-                        <h4 className="font-black text-gray-900 text-sm">{selectedMapShop.name}</h4>
+                        <div className="flex items-center space-x-1.5">
+                          <h4 className="font-black text-gray-900 text-sm">{selectedMapShop.name}</h4>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFavoriteShop(selectedMapShop.id)}
+                            className="text-xs px-1.5 py-0.5 rounded-lg bg-rose-50 text-rose-600 font-bold"
+                            title="단골 매장 찜하기"
+                          >
+                            {favoriteShopIds.includes(selectedMapShop.id) ? '♥' : '♡'}
+                          </button>
+                        </div>
                         <p className="text-xs text-gray-500">{selectedMapShop.desc}</p>
+                        {selectedMapShop.facilityTags?.length > 0 && (
+                          <div className="flex flex-wrap gap-1 pt-0.5">
+                            {selectedMapShop.facilityTags.map((tid) => {
+                              const tagObj = FACILITY_TAGS.find((t) => t.id === tid);
+                              if (!tagObj) return null;
+                              return (
+                                <span
+                                  key={tid}
+                                  className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-semibold"
+                                >
+                                  #{tagObj.label}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         <p className="text-xs font-extrabold text-orange-600">
                           {selectedMapShop.price} (소·중·대형 체급별 차등)
                         </p>
@@ -1981,7 +2367,12 @@ export default function App() {
 
               <div>
                 <h3 className="font-extrabold mb-2.5 text-xs tracking-wide uppercase text-gray-400">
-                  {myLocation ? '내 위치에서 가까운 순' : '추천 제휴 미용실'} ({filteredShops.length}곳)
+                  {onlyFavoriteShops
+                    ? '내가 찜한 단골 미용실'
+                    : myLocation
+                    ? '내 위치에서 가까운 순'
+                    : '추천 제휴 미용실'}{' '}
+                  ({filteredShops.length}곳)
                 </h3>
                 {filteredShops.length === 0 ? (
                   <div className="bg-white p-8 rounded-3xl text-center shadow-sm border border-gray-100">
@@ -1994,6 +2385,7 @@ export default function App() {
                   <div className="space-y-3">
                     {filteredShops.map((shop) => {
                       const badge = getPetTypeBadge(shop.petType);
+                      const isFav = favoriteShopIds.includes(shop.id);
                       return (
                         <div
                           key={shop.id}
@@ -2026,10 +2418,42 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <h4 className="font-extrabold text-gray-900 text-sm">{shop.name}</h4>
+                            <div className="flex items-center space-x-1.5">
+                              <h4 className="font-extrabold text-gray-900 text-sm">{shop.name}</h4>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleFavoriteShop(shop.id);
+                                }}
+                                className={`text-xs px-1.5 py-0.5 rounded-lg font-bold transition ${
+                                  isFav
+                                    ? 'bg-rose-100 text-rose-600'
+                                    : 'bg-gray-100 text-gray-400 hover:text-rose-500'
+                                }`}
+                              >
+                                {isFav ? '♥ 찜' : '♡'}
+                              </button>
+                            </div>
                             <p className="text-xs text-gray-500 font-medium">
                               {shop.region} {shop.district} · {shop.desc}
                             </p>
+                            {shop.facilityTags?.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {shop.facilityTags.map((tid) => {
+                                  const tagObj = FACILITY_TAGS.find((t) => t.id === tid);
+                                  if (!tagObj) return null;
+                                  return (
+                                    <span
+                                      key={tid}
+                                      className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-semibold"
+                                    >
+                                      #{tagObj.label}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
                             <p className="text-xs font-bold text-orange-600">
                               {shop.price || '50,000원~'} · 체급별 요금 차등
                             </p>
@@ -2066,7 +2490,9 @@ export default function App() {
 
           {userTab === 'bookings' && (
             <div className="space-y-3">
-              <h3 className="font-extrabold text-gray-800 text-sm">📋 내 예약 & 미용 후기 작성</h3>
+              <h3 className="font-extrabold text-gray-800 text-sm">
+                📋 내 예약 · 케어 일지 · 원클릭 재예약
+              </h3>
               {myBookings.length === 0 ? (
                 <div className="bg-white p-8 rounded-3xl text-center shadow-sm border border-gray-100">
                   <p className="text-2xl mb-2">🗓️</p>
@@ -2078,6 +2504,8 @@ export default function App() {
                 myBookings.map((b) => {
                   const linkedReview = reviews.find((r) => r.bookingId === b.id);
                   const isHidden = Boolean(linkedReview?.hidden);
+                  const matchedShop =
+                    allShops.find((s) => s.id === b.shopId || s.name === b.shop) || null;
                   return (
                     <div
                       key={b.id}
@@ -2118,10 +2546,22 @@ export default function App() {
                             <span className="font-bold text-orange-600">{b.styleDetail}</span>
                           </p>
                         )}
+                        {b.referencePhotoUrl && (
+                          <div className="pt-1.5">
+                            <p className="text-[11px] text-gray-500 font-bold mb-1">
+                              🖼️ 내가 첨부한 희망 참고 사진:
+                            </p>
+                            <img
+                              src={b.referencePhotoUrl}
+                              alt="희망 참고 사진"
+                              className="w-full max-h-36 object-cover rounded-xl border border-gray-200"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {b.careReport && (
-                        <div className="bg-blue-50/80 border border-blue-200 p-3.5 rounded-2xl space-y-1">
+                        <div className="bg-blue-50/80 border border-blue-200 p-3.5 rounded-2xl space-y-1.5">
                           <div className="flex justify-between items-center">
                             <span className="text-[11px] font-black text-blue-800">
                               ✂️ 사장님 미용 케어 일지
@@ -2134,11 +2574,29 @@ export default function App() {
                             컨디션: {b.careReport.condition}
                           </p>
                           <p className="text-xs text-blue-800 leading-relaxed">{b.careReport.note}</p>
+                          {b.careReport.photoUrl && (
+                            <img
+                              src={b.careReport.photoUrl}
+                              alt="미용 완료 사진"
+                              className="w-full max-h-48 object-cover rounded-xl border border-blue-200 mt-1"
+                            />
+                          )}
                         </div>
                       )}
 
+                      {/* 이전 스타일 그대로 원클릭 재예약 버튼 */}
+                      {matchedShop && (
+                        <button
+                          type="button"
+                          onClick={() => openShopBookingModal(matchedShop, b)}
+                          className="w-full bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-xs font-extrabold py-2.5 rounded-xl transition"
+                        >
+                          🔁 이 스타일 그대로 재예약
+                        </button>
+                      )}
+
                       {b.status !== '거절됨' && (
-                        <div className="pt-1">
+                        <div className="pt-0.5">
                           {b.reviewed ? (
                             <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl text-xs space-y-2">
                               <div className="flex justify-between items-center">
@@ -2187,7 +2645,7 @@ export default function App() {
                                 setReviewModalBooking(b);
                                 setReviewRating(5);
                                 setReviewText('');
-                                setReviewPhotoData('');
+                                setReviewPhotoData(b.careReport?.photoUrl || '');
                               }}
                               className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold py-2.5 rounded-xl shadow-sm transition"
                             >
@@ -2214,7 +2672,7 @@ export default function App() {
             </div>
           )}
 
-          {/* 보호자 탭 3: 다둥이 반려동물 추가/수정/삭제 관리 */}
+          {/* 보호자 탭 3: 다둥이 반려동물 추가/수정/삭제 관리 + 미용 주기 표시 */}
           {userTab === 'pet' && (
             <div className="space-y-4">
               <div className="bg-white p-3.5 rounded-2xl border border-orange-100 text-[11px] text-gray-600 leading-relaxed">
@@ -2252,6 +2710,20 @@ export default function App() {
                     {petsList.map((p) => {
                       const isCat = p.petSpecies === 'cat';
                       const tier = SIZE_TIERS[getSizeTierByWeight(p.petWeight)];
+                      const completedHistory = myBookings.filter(
+                        (b) =>
+                          b.status === '미용 완료' &&
+                          (b.petId === p.id || (b.pet && b.pet.includes(p.petName)))
+                      );
+                      const lastCompleted = completedHistory[0];
+                      const elapsedDays = lastCompleted
+                        ? getDaysSinceDate(
+                            lastCompleted.completedDateIso ||
+                              lastCompleted.careReport?.completedAt ||
+                              lastCompleted.bookingDate
+                          )
+                        : null;
+
                       return (
                         <div
                           key={p.id}
@@ -2286,6 +2758,19 @@ export default function App() {
                             <p className="text-xs text-gray-600 font-medium">
                               {p.petBreed ? p.petBreed : isCat ? '묘종 미입력' : '견종 미입력'}
                             </p>
+                            {elapsedDays !== null && (
+                              <p
+                                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg inline-block ${
+                                  elapsedDays >= 30
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-50 text-emerald-700'
+                                }`}
+                              >
+                                {elapsedDays >= 30
+                                  ? `⏰ 마지막 미용 후 ${elapsedDays}일 경과 (재미용 권장)`
+                                  : `✨ 마지막 미용 후 ${elapsedDays}일 지남`}
+                              </p>
+                            )}
                             {p.petNote && (
                               <p className="text-[11px] text-rose-500 font-medium bg-rose-50 px-2.5 py-1 rounded-lg inline-block">
                                 ⚠️ {p.petNote}
@@ -2435,13 +2920,13 @@ export default function App() {
           )}
         </main>
 
-        {/* [모달 1] 제휴 업체별 예약 모달 (소·중·대형 체급 요금 계산 포함) */}
+        {/* [모달 1] 제휴 업체별 예약 모달 (체급 요금 + 털 엉킴 + 스타일 예시 카드 + 희망 참고 사진 포함) */}
         {bookingModalShop && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[9999]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
               <div className="flex justify-between items-start border-b border-gray-100 pb-3">
                 <div>
-                  <div className="flex items-center space-x-1.5">
+                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                     <span
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                         getPetTypeBadge(bookingModalShop.petType).bg
@@ -2457,7 +2942,20 @@ export default function App() {
                       ⭐ {bookingModalShop.avgRating} · 후기 {bookingModalShop.totalReviews}건 전체보기
                     </button>
                   </div>
-                  <h3 className="font-black text-gray-900 text-base mt-1">{bookingModalShop.name}</h3>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <h3 className="font-black text-gray-900 text-base">{bookingModalShop.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleFavoriteShop(bookingModalShop.id)}
+                      className={`text-[11px] px-2 py-0.5 rounded-full font-extrabold border transition ${
+                        favoriteShopIds.includes(bookingModalShop.id)
+                          ? 'bg-rose-500 text-white border-rose-500'
+                          : 'bg-rose-50 text-rose-600 border-rose-200'
+                      }`}
+                    >
+                      {favoriteShopIds.includes(bookingModalShop.id) ? '♥ 단골 찜됨' : '♡ 단골 찜'}
+                    </button>
+                  </div>
                   <p className="text-[11px] text-gray-400 mt-0.5">
                     ⏱️ 1시간 30분 단위 · 소(&lt;7kg) 기본 / 중(7~15kg) +1.5만 / 대(15kg+) +3만
                   </p>
@@ -2554,7 +3052,7 @@ export default function App() {
                         disabled={bookingModalShop.petType === 'cat'}
                         onClick={() => {
                           setBookingPetSpecies('dog');
-                          setCustomStyleDetail('얼굴 동그랗게 (곰돌이컷)');
+                          setCustomStyleDetail(STYLE_PRESETS_BY_SPECIES.dog[0].name);
                         }}
                         className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
                           bookingModalShop.petType === 'cat'
@@ -2571,7 +3069,7 @@ export default function App() {
                         disabled={bookingModalShop.petType === 'dog'}
                         onClick={() => {
                           setBookingPetSpecies('cat');
-                          setCustomStyleDetail('무마취 전체 클리핑 (사자컷/올빡)');
+                          setCustomStyleDetail(STYLE_PRESETS_BY_SPECIES.cat[0].name);
                         }}
                         className={`py-2.5 rounded-xl text-xs font-extrabold border transition ${
                           bookingModalShop.petType === 'dog'
@@ -2611,6 +3109,37 @@ export default function App() {
                             {tier.extraFee === 0
                               ? '기본가'
                               : `+${tier.extraFee.toLocaleString('ko-KR')}원`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 털 엉킴 사전 안내 체크 */}
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
+                    🪮 털 엉킴 상태 사전 안내 (현장 요금 투명화)
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {MATTING_OPTIONS.map((opt) => {
+                      const isSelected = bookingMattingLevel === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setBookingMattingLevel(opt.id)}
+                          className={`py-2 px-2 rounded-xl text-[11px] font-extrabold border transition text-center ${
+                            isSelected
+                              ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          <div>{opt.label}</div>
+                          <div className="text-[10px] opacity-85 mt-0.5">
+                            {opt.extraFee === 0
+                              ? '추가없음'
+                              : `+${opt.extraFee.toLocaleString('ko-KR')}원`}
                           </div>
                         </button>
                       );
@@ -2686,7 +3215,8 @@ export default function App() {
                     {modalServices.map((svc, idx) => {
                       const active = selectedServiceIdx === idx;
                       const svcBase = parsePriceNumber(svc.price, 50000);
-                      const svcWithTier = svcBase + activeTierObj.extraFee;
+                      const svcTotal =
+                        svcBase + activeTierObj.extraFee + activeMattingObj.extraFee;
                       return (
                         <div
                           key={idx}
@@ -2700,11 +3230,12 @@ export default function App() {
                           <div>
                             <p className="text-xs font-extrabold text-gray-900">{svc.name}</p>
                             <p className="text-[11px] text-gray-400 mt-0.5">
-                              기본 {formatKrw(svcBase)} · {activeTierObj.shortLabel} 적용
+                              기본 {formatKrw(svcBase)} · {activeTierObj.shortLabel}
+                              {activeMattingObj.extraFee > 0 ? ` · ${activeMattingObj.label}` : ''}
                             </p>
                           </div>
                           <span className="text-xs font-black text-orange-600">
-                            {formatKrw(svcWithTier)}
+                            {formatKrw(svcTotal)}
                           </span>
                         </div>
                       );
@@ -2714,37 +3245,95 @@ export default function App() {
 
                 <div className="bg-orange-50 border border-orange-200 rounded-2xl px-4 py-3 flex justify-between items-center">
                   <span className="text-xs font-extrabold text-gray-700">
-                    예상 미용 비용 ({activeTierObj.shortLabel})
+                    예상 총 미용 비용 ({activeTierObj.shortLabel}
+                    {activeMattingObj.extraFee > 0 ? ` + ${activeMattingObj.label}` : ''})
                   </span>
                   <span className="text-sm font-black text-orange-600">
                     {formatKrw(estimatedTotalPrice)}
                   </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-extrabold text-gray-700 mb-1.5">
+                {/* 스타일별 예시 썸네일 카드 + 희망 참고 사진 첨부 */}
+                <div className="space-y-2.5">
+                  <label className="block text-xs font-extrabold text-gray-700">
                     4️⃣{' '}
                     {bookingPetSpecies === 'cat'
-                      ? '고양이 미용 방식 선택'
-                      : '강아지 미용 방식 / 컷 스타일'}
+                      ? '고양이 미용 방식 & 스타일 예시'
+                      : '강아지 미용 방식 & 컷 스타일 예시'}
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {styleOptionsBySpecies.map((styleOption) => (
-                      <button
-                        key={styleOption}
-                        type="button"
-                        onClick={() => setCustomStyleDetail(styleOption)}
-                        className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border text-left transition ${
-                          customStyleDetail === styleOption
-                            ? bookingPetSpecies === 'cat'
-                              ? 'bg-purple-700 text-white border-purple-700'
-                              : 'bg-slate-900 text-white border-slate-900'
-                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        {styleOption}
-                      </button>
-                    ))}
+                  <div className="grid grid-cols-1 gap-2">
+                    {stylePresetsBySpecies.map((preset) => {
+                      const isSelected = customStyleDetail === preset.name;
+                      return (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          onClick={() => setCustomStyleDetail(preset.name)}
+                          className={`p-2.5 rounded-2xl border-2 flex items-center space-x-3 text-left transition ${
+                            isSelected
+                              ? bookingPetSpecies === 'cat'
+                                ? 'bg-purple-50 border-purple-600 text-purple-950 shadow-sm'
+                                : 'bg-orange-50 border-orange-500 text-gray-900 shadow-sm'
+                              : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          <StylePreviewThumb
+                            species={bookingPetSpecies}
+                            mode={preset.mode}
+                            bg={preset.bg}
+                            stroke={preset.stroke}
+                            accent={preset.accent}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-extrabold truncate">{preset.name}</p>
+                            <p className="text-[11px] text-gray-500 mt-0.5">{preset.caption}</p>
+                          </div>
+                          {isSelected && (
+                            <span
+                              className={`text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 ${
+                                bookingPetSpecies === 'cat'
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-orange-500 text-white'
+                              }`}
+                            >
+                              선택됨
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* 희망 레퍼런스(참고) 사진 첨부 */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-2xl p-3 space-y-2">
+                    <label className="block text-[11px] font-extrabold text-gray-700">
+                      🖼️ 희망 스타일 참고 사진 첨부 (선택)
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleBookingRefPhotoChange}
+                      className="block w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-orange-100 file:text-orange-700 hover:file:bg-orange-200"
+                    />
+                    {uploadingRefPhoto && (
+                      <p className="text-[11px] text-orange-600 font-bold">참고 사진 처리 중...</p>
+                    )}
+                    {bookingRefPhotoData && (
+                      <div>
+                        <img
+                          src={bookingRefPhotoData}
+                          alt="희망 참고 사진 미리보기"
+                          className="w-full max-h-36 object-cover rounded-xl border border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setBookingRefPhotoData('')}
+                          className="mt-1 text-[11px] text-rose-600 font-bold underline"
+                        >
+                          참고 사진 지우기
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2754,7 +3343,7 @@ export default function App() {
                   </label>
                   <input
                     type="text"
-                    placeholder="예: 1시간 30분 내에 안전하게 마무리 부탁드려요"
+                    placeholder="예: 귀 주변은 길게 남기고 발끝만 깔끔하게 정리해 주세요"
                     value={bookingNote}
                     onChange={(e) => setBookingNote(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs focus:bg-white focus:outline-none"
@@ -2771,7 +3360,7 @@ export default function App() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isFullDayBlocked}
+                    disabled={isFullDayBlocked || uploadingRefPhoto}
                     className="flex-1 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 text-white py-3 rounded-2xl text-xs font-bold shadow-md shadow-orange-500/20 transition"
                   >
                     예약 신청 확정
@@ -2782,7 +3371,7 @@ export default function App() {
           </div>
         )}
 
-        {/* [모달 2] 매장 보호자 후기 전체 보기 모달 (이름 마스킹 · 가리기 안내 · 사진 · 사장님 답글 · 본인 리뷰 삭제 포함) */}
+        {/* [모달 2] 매장 보호자 후기 전체 보기 모달 */}
         {activeReviewsShop && (
           <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-[10000]">
             <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[85vh] overflow-y-auto p-6 space-y-4 shadow-2xl border border-gray-100">
@@ -2954,7 +3543,7 @@ export default function App() {
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
-                  📷 미용 사진 첨부 (선택)
+                  📷 미용 사진 첨부 (선택 · 케어 일지 사진 자동 불러오기 지원)
                 </label>
                 <input
                   type="file"
@@ -3185,6 +3774,18 @@ export default function App() {
                       {item.requestNote && item.requestNote !== '없음' && (
                         <p className="text-slate-400">💬 보호자 요청: {item.requestNote}</p>
                       )}
+                      {item.referencePhotoUrl && (
+                        <div className="pt-1.5">
+                          <p className="text-[11px] text-amber-300 font-bold mb-1">
+                            🖼️ 보호자 첨부 희망 참고 사진:
+                          </p>
+                          <img
+                            src={item.referencePhotoUrl}
+                            alt="희망 참고 사진"
+                            className="w-full max-h-44 object-cover rounded-xl border border-slate-700"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     {item.status === '대기 중' && (
@@ -3210,19 +3811,27 @@ export default function App() {
                           setCareModalBooking(item);
                           setCareCondition('컨디션 좋음 · 협조적');
                           setCareNoteInput('');
+                          setCarePhotoData('');
                         }}
                         className="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs py-2.5 rounded-xl font-extrabold transition shadow-sm"
                       >
-                        ✨ 미용 완료 처리 & 보호자 케어 일지 작성
+                        ✨ 미용 완료 처리 & 케어 일지·사진 작성
                       </button>
                     )}
 
                     {item.careReport && (
-                      <div className="bg-slate-900 border border-blue-800/60 p-3 rounded-xl text-xs space-y-1">
+                      <div className="bg-slate-900 border border-blue-800/60 p-3 rounded-xl text-xs space-y-1.5">
                         <p className="text-blue-400 font-bold">
                           📝 발송된 케어 일지 ({item.careReport.condition})
                         </p>
                         <p className="text-slate-300">{item.careReport.note}</p>
+                        {item.careReport.photoUrl && (
+                          <img
+                            src={item.careReport.photoUrl}
+                            alt="발송된 미용 완료 사진"
+                            className="w-full max-h-44 object-cover rounded-xl border border-slate-700"
+                          />
+                        )}
                       </div>
                     )}
                   </div>
@@ -3374,9 +3983,9 @@ export default function App() {
               className="bg-slate-800 p-6 rounded-3xl border border-slate-700/60 space-y-4 shadow-sm"
             >
               <div>
-                <h3 className="font-black text-white text-base">🏪 매장명 & 사장님 정보 수정</h3>
+                <h3 className="font-black text-white text-base">🏪 매장명 & 안심 시설 설정</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  1시간 30분 단위 타임슬롯 및 대표 미용 메뉴 설정을 관리하세요. (소형 기본 / 중형 +15,000원 / 대형 +30,000원 자동 적용)
+                  매장 안심 시설 태그와 1시간 30분 단위 타임슬롯을 관리하세요.
                 </p>
               </div>
 
@@ -3428,6 +4037,32 @@ export default function App() {
                       {opt.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* 매장 안심 시설 태그 선택 */}
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  🛡️ 우리 매장 안심 시설 태그 (보호자 검색 필터 노출)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {FACILITY_TAGS.map((tag) => {
+                    const active = shopFacilityTags.includes(tag.id);
+                    return (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => toggleShopFacilityTag(tag.id)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition ${
+                          active
+                            ? 'bg-emerald-600 text-white border-emerald-500'
+                            : 'bg-slate-900 text-slate-400 border-slate-700'
+                        }`}
+                      >
+                        {active ? '✓ ' : '+ '}#{tag.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -3542,11 +4177,11 @@ export default function App() {
                 type="submit"
                 className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-2xl shadow-md shadow-orange-500/20 text-sm transition"
               >
-                타임슬롯 및 정보 저장하기
+                매장 정보 저장하기
               </button>
             </form>
 
-            {/* 우리 매장 보호자 후기 관리 (가리기 · 답글 · 삭제) */}
+            {/* 우리 매장 보호자 후기 관리 */}
             <div className="bg-slate-800 p-5 rounded-3xl border border-slate-700/60 space-y-3">
               <h4 className="font-black text-white text-sm">
                 ⭐ 우리 매장 보호자 후기 ({myShopReviews.length}건)
@@ -3675,12 +4310,12 @@ export default function App() {
         )}
       </main>
 
-      {/* 사장님 미용 완료 케어 일지 작성 모달 */}
+      {/* 사장님 미용 완료 케어 일지 + 완료 사진 작성 모달 */}
       {careModalBooking && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-[9999]">
           <form
             onSubmit={handleCompleteWithCareNote}
-            className="bg-slate-800 border border-slate-700 rounded-3xl max-w-sm w-full p-6 space-y-4 shadow-2xl text-white"
+            className="bg-slate-800 border border-slate-700 rounded-3xl max-w-sm w-full max-h-[90vh] overflow-y-auto p-6 space-y-4 shadow-2xl text-white"
           >
             <div>
               <h3 className="font-black text-base">✨ 미용 완료 & 케어 일지 작성</h3>
@@ -3730,17 +4365,52 @@ export default function App() {
               />
             </div>
 
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">
+                📷 미용 완료 사진 첨부 (선택 · 보호자 일지에 전달)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleCarePhotoChange}
+                className="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-900/60 file:text-blue-300 hover:file:bg-blue-900"
+              />
+              {uploadingCarePhoto && (
+                <p className="text-[11px] text-blue-300 font-bold mt-1">사진 처리 중...</p>
+              )}
+              {carePhotoData && (
+                <div className="mt-2">
+                  <img
+                    src={carePhotoData}
+                    alt="미용 완료 미리보기"
+                    className="w-full max-h-40 object-cover rounded-2xl border border-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setCarePhotoData('')}
+                    className="mt-1 text-[11px] text-rose-400 font-bold underline"
+                  >
+                    첨부 사진 지우기
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="flex space-x-2">
               <button
                 type="button"
-                onClick={() => setCareModalBooking(null)}
+                onClick={() => {
+                  setCareModalBooking(null);
+                  setCarePhotoData('');
+                }}
                 className="flex-1 bg-slate-700 text-slate-300 py-3 rounded-xl text-xs font-bold"
               >
                 취소
               </button>
               <button
                 type="submit"
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
+                disabled={uploadingCarePhoto}
+                className="flex-1 bg-blue-600 disabled:bg-blue-400 hover:bg-blue-500 text-white py-3 rounded-xl text-xs font-bold shadow-sm"
               >
                 완료 및 일지 발송
               </button>
